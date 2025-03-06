@@ -400,83 +400,97 @@ async def send_request(
 
   return request_latency, None, None, None
 
+
+async def run_single_request(args: argparse.Namespace, api_url: str, tokenizer: PreTrainedTokenizerBase,
+                               prompt: str, prompt_len: int, output_len: int, chosen_model: str) -> Tuple[str, Tuple]:
+    if args.stream_request:
+        result = await send_stream_request(
+            args.backend, api_url, prompt, prompt_len, output_len,
+            args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model)
+    else:
+        result = await send_request(
+            args.backend, api_url, prompt, prompt_len, output_len,
+            args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model)
+    return chosen_model, result
+
 async def benchmark(
     args: argparse.Namespace, 
     api_url: str,
     tokenizer: PreTrainedTokenizerBase,
-    model: str,
-) -> Tuple[List[Tuple[int, int, float]], List[float], List[float], List[float], Dict[str, int]]:
-  """Runs benchmark with asynchronous requests."""
-  input_requests = get_filtered_dataset(
-      args.dataset,
-      args.max_input_length,
-      args.max_output_length,
-      tokenizer,
-      args.use_dummy_text,
-  )
-  benchmark_start_time = time.time()
-  tasks: List[asyncio.Task] = []
-  prompts_sent: int = 0
-  async for request in generate_next_request(input_requests, args.request_rate):
-    if args.num_prompts <= prompts_sent:
-      break
-    prompt, prompt_len, output_len = request
-    if args.stream_request:
-      task = asyncio.create_task(
-        send_stream_request(
-            args.backend,
-            api_url,
-            prompt,
-            prompt_len,
-            output_len,
-            args.best_of,
-            args.use_beam_search,
-            args.top_k,
-            tokenizer,
-            args.sax_model,
-            model,
-        )
-      )
-    else: 
-      task = asyncio.create_task(
-      send_request(
-          args.backend,
-          api_url,
-          prompt,
-          prompt_len,
-          output_len,
-          args.best_of,
-          args.use_beam_search,
-          args.top_k,
-          tokenizer,
-          args.sax_model,
-          model,
-        )
-      )
-    tasks.append(task)
-    prompts_sent += 1
-  results = await asyncio.gather(*tasks)
-  combined_latencies = []
-  combined_ttfts = []
-  combined_itls = []
-  combined_tpots = []
-  combined_errors = init_errors_map()
-  for latency, ttft, itl, errors in results:
-    if latency:
-      combined_latencies.append(latency)
-    if errors:
-      for err, count in errors.items():
-        combined_errors[err] = combined_errors[err] + count
-    if ttft:
-      combined_ttfts.append(ttft)
-      _, output_len, request_latency = latency
-      combined_tpots.append((request_latency - ttft) / (output_len - 1))
-    if itl:
-      combined_itls.extend(itl)
-  
-  benchmark_duration = time.time() - benchmark_start_time
-  print_and_save_result(args, benchmark_duration, prompts_sent, model, combined_latencies, combined_ttfts, combined_itls, combined_tpots, combined_errors)
-  return combined_latencies, combined_ttfts, combined_itls, combined_tpots, combined_errors
+    models: List[str],
+    traffic_split: List[float],
+) -> None:
+    """Runs benchmark requests with model selection per request based on weighted ratio.
+    Also saves results separately for each model.
+    """
+    input_requests = get_filtered_dataset(
+        args.dataset, args.max_input_length, args.max_output_length, tokenizer, args.use_dummy_text)
+    
+    # Combine the models list and traffic split list into a dict
+
+    
+
+    if len(models) != len(traffic_split):
+        raise ValueError("The number of models and traffic split values must match")
+    total_weight = sum(traffic_split)
+    if abs(total_weight - 1.0) > 1e-6:
+        raise ValueError(f"Traffic split must sum to 1.0, but got {total_weight}")
+    models_dict = dict(zip(models, traffic_split))
+    model_names = list(models_dict.keys())
+    model_weights = list(models_dict.values())
+
+    benchmark_start_time = time.time()
+    tasks: List[asyncio.Task] = []
+    prompts_sent = 0
+    async for request in generate_next_request(input_requests, args.request_rate):
+        if prompts_sent >= args.num_prompts:
+            break
+        prompt, prompt_len, output_len = request
+        chosen_model = random.choices(model_names, weights=model_weights)[0]
+        task = asyncio.create_task(run_single_request(args, api_url, tokenizer, prompt, prompt_len, output_len, chosen_model))
+        tasks.append(task)
+        prompts_sent += 1
+
+    results = await asyncio.gather(*tasks)
+
+    overall_results = {"latencies": [], "ttfts": [], "itls": [], "tpots": [], "errors": init_errors_map()}
+    per_model_results: Dict[str, Dict[str, List]] = {}
+    for model in model_names:
+        per_model_results[model] = {"latencies": [], "ttfts": [], "itls": [], "tpots": [], "errors": init_errors_map()}
+
+    for chosen_model, res in results:
+        if res is None:
+            continue
+        latency, ttft, itl, errors = res
+        overall_results["latencies"].append(latency)
+        if ttft:
+            overall_results["ttfts"].append(ttft)
+            overall_results["tpots"].append((latency[2] - ttft) / (latency[1] - 1))
+        if itl:
+            overall_results["itls"].extend(itl)
+        if errors:
+            for k, v in errors.items():
+                overall_results["errors"][k] += v
+        per_model_results[chosen_model]["latencies"].append(latency)
+        if ttft:
+            per_model_results[chosen_model]["ttfts"].append(ttft)
+            per_model_results[chosen_model]["tpots"].append((latency[2] - ttft) / (latency[1] - 1))
+        if itl:
+            per_model_results[chosen_model]["itls"].extend(itl)
+        if errors:
+            for k, v in errors.items():
+                per_model_results[chosen_model]["errors"][k] += v
+
+    benchmark_duration = time.time() - benchmark_start_time
+    
+    print_and_save_result(args, benchmark_duration, prompts_sent, "weighted",
+                          overall_results["latencies"], overall_results["ttfts"],
+                          overall_results["itls"], overall_results["tpots"],
+                          overall_results["errors"])
+    for model, data in per_model_results.items():
+        print_and_save_result(args, benchmark_duration, len(data["latencies"]), model,
+                              data["latencies"], data["ttfts"], data["itls"],
+                              data["tpots"], data["errors"])
 
 def save_json_results(args: argparse.Namespace, benchmark_result, server_metrics, model, errors):
   # Setup
@@ -788,34 +802,18 @@ async def main(args: argparse.Namespace):
   benchmark_start_time = time.time()
   args.start_datetime = datetime.fromtimestamp(benchmark_start_time)
   
-  results = await asyncio.gather(
-            *[benchmark(args, api_url, tokenizer, model) for model in models]
+  await benchmark(args, api_url, tokenizer,models, args.traffic_split)
+  
+
+
+
+def parse_traffic_split(arg):
+    try:
+        return [float(x) for x in arg.split(',')]
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "Traffic split must be a comma-separated list of floats, e.g. '0.9,0.1'"
         )
-  
-  # Summarize results
-  combined_latencies = []
-  combined_ttfts = []
-  combined_itls = []
-  combined_tpots = []
-  combined_errors = {
-    "ClientConnectorError": 0,
-    "TimeoutError": 0,
-    "ContentTypeError": 0,
-    "ClientOSError": 0,
-    "unknown_error": 0,
-    "ServerDisconnectedError": 0,
-  }
-  for latencies, ttfts, itls, tpots, errors in results:
-    combined_latencies.extend(latencies)
-    combined_ttfts.extend(ttfts)
-    combined_itls.extend(itls)
-    combined_tpots.extend(tpots)
-    for k, v in errors.items():
-      combined_errors[k] = combined_errors[k] + v
-  
-  benchmark_duration_all_models = time.time() - benchmark_start_time
-  if args.save_aggregated_result:
-    print_and_save_result(args, benchmark_duration_all_models, len(models)*args.num_prompts, f"ALL-{len(models)}-MODELS", combined_latencies, combined_ttfts, combined_itls, combined_tpots, combined_errors)
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -850,6 +848,11 @@ if __name__ == "__main__":
     type=str,
     help="Comma separated list of models to benchmark.",
   )
+  parser.add_argument(
+    "--traffic-split",
+    type=parse_traffic_split,
+    help="Comma-separated list of traffic split proportions for the models, e.g. '0.9,0.1'. Sum must equal 1.0."
+)
   parser.add_argument(
     "--stream-request", 
     action="store_true",
