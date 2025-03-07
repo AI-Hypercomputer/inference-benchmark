@@ -429,7 +429,8 @@ async def benchmark(
     # Combine the models list and traffic split list into a dict
 
     
-
+    if traffic_split is None:
+      traffic_split = [1.0 / len(models)] * len(models)
     if len(models) != len(traffic_split):
         raise ValueError("The number of models and traffic split values must match")
     total_weight = sum(traffic_split)
@@ -462,10 +463,11 @@ async def benchmark(
         if res is None:
             continue
         latency, ttft, itl, errors = res
+        prompt_len, output_len, request_latency = latency
         overall_results["latencies"].append(latency)
         if ttft:
             overall_results["ttfts"].append(ttft)
-            overall_results["tpots"].append((latency[2] - ttft) / (latency[1] - 1))
+            overall_results["tpots"].append((request_latency - ttft) / (output_len - 1) if output_len > 1 else 0)
         if itl:
             overall_results["itls"].extend(itl)
         if errors:
@@ -474,7 +476,7 @@ async def benchmark(
         per_model_results[chosen_model]["latencies"].append(latency)
         if ttft:
             per_model_results[chosen_model]["ttfts"].append(ttft)
-            per_model_results[chosen_model]["tpots"].append((latency[2] - ttft) / (latency[1] - 1))
+            per_model_results[chosen_model]["tpots"].append((request_latency - ttft) / (output_len - 1) if output_len > 1 else 0)
         if itl:
             per_model_results[chosen_model]["itls"].extend(itl)
         if errors:
@@ -770,6 +772,10 @@ async def main(args: argparse.Namespace):
   print(args)
   models = args.models.split(',')
   print(f"Models to benchmark: {models}")
+  if args.traffic_split:
+    print(f"Traffic split: {args.traffic_split}")
+  else:
+    print("No traffic split specified. Defaulting to uniform traffic split.")
   random.seed(args.seed)
   np.random.seed(args.seed)
   endpoint = (
@@ -851,6 +857,7 @@ if __name__ == "__main__":
   parser.add_argument(
     "--traffic-split",
     type=parse_traffic_split,
+    default=None,
     help="Comma-separated list of traffic split proportions for the models, e.g. '0.9,0.1'. Sum must equal 1.0."
 )
   parser.add_argument(
