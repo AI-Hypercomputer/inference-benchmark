@@ -29,6 +29,7 @@ import requests
 import time
 from typing import AsyncGenerator, List, Optional, Tuple, Dict
 from prometheus_client import start_http_server, Histogram, Gauge
+import logging
 
 import google.auth
 import google.auth.transport.requests
@@ -418,11 +419,11 @@ async def run_single_request(args: argparse.Namespace, api_url: str, tokenizer: 
     if args.stream_request:
         result = await send_stream_request(
             args.backend, api_url, prompt, prompt_len, output_len,
-            args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model)
+            args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model, args.request_timeout,)
     else:
         result = await send_request(
             args.backend, api_url, prompt, prompt_len, output_len,
-            args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model)
+            args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model, args.request_timeout,)
     return chosen_model, result
 
 async def benchmark(
@@ -608,17 +609,36 @@ def metrics_to_scrape(backend: str) -> List[str]:
   # If a value is specified for a given key, it will be populated on the outputs `summary_stats.stats` field as 'value':'stats' as well.
   if backend == "vllm":
     return [
-      "vllm:gpu_cache_usage_perc", 
+      "vllm:cpu_cache_usage_perc",
+      "vllm:gpu_cache_usage_perc",
+
       "vllm:num_requests_waiting",
       "vllm:num_requests_running",
       "vllm:num_requests_swapped",
+
       "vllm:time_to_first_token_seconds",
       "vllm:time_per_output_token_seconds",
+      "vllm:e2e_request_latency_seconds",
+
+      "vllm:request_prefill_time_seconds",
       "vllm:request_queue_time_seconds",
+      "vllm:request_decode_time_seconds",
       "vllm:request_inference_time_seconds",
+      "vllm:time_in_queue_requests",
+
       "vllm:request_prompt_tokens",
       "vllm:request_generation_tokens",
       "vllm:iteration_tokens_total",
+      "vllm:prompt_tokens_total",
+      "vllm:generation_tokens_total",
+      "vllm:request_success_total",
+      "vllm:num_preemptions_total",
+
+      "vllm:cpu_prefix_cache_hit_rate",
+      "vllm:gpu_prefix_cache_hit_rate",
+
+      "vllm:avg_generation_throughput_toks_per_s",
+      "vllm:avg_prompt_throughput_toks_per_s",
     ]
   elif backend == "jetstream":
     return [
@@ -628,7 +648,7 @@ def metrics_to_scrape(backend: str) -> List[str]:
   else:
     return []
 
-def print_metrics(metrics: List[str], duration: float, backend: str):
+def print_metrics(metrics: List[str], duration: float, namespace: str, job: str):
   # Creates a credentials object from the default service account file
   # Assumes that script has appropriate default credentials set up, ref:
   # https://googleapis.dev/python/google-auth/latest/user-guide.html#application-default-credentials
@@ -646,12 +666,12 @@ def print_metrics(metrics: List[str], duration: float, backend: str):
   all_metrics_metadata = request_post.json()
   if request_post.ok is not True:
     print("HTTP Error: %s" % (all_metrics_metadata))
+    return server_metrics
   if all_metrics_metadata["status"] != "success":
     print("Metadata error response: %s" % all_metrics_metadata["error"])
+    return server_metrics
 
   for metric in metrics:
-    print("Metric Name: %s" % (metric))
-
     # Find metric type
     metric_type = all_metrics_metadata['data'][metric]
     if all_metrics_metadata['data'][metric] is None:
@@ -664,43 +684,58 @@ def print_metrics(metrics: List[str], duration: float, backend: str):
     # podmonitoring spec assumed to be named "$BACKEND-podmonitoring"
     queries = {
       "gauge": {
-        "Mean": "avg_over_time(%s{job='%s-podmonitoring'}[%.0fs])" % (metric, backend, duration),
-        "Median": "quantile_over_time(0.5, %s{job='%s-podmonitoring'}[%.0fs])" % (metric, backend, duration),
-        "Sd": "stddev_over_time(%s{job='%s-podmonitoring'}[%.0fs])" % (metric, backend, duration),
-        "Min": "min_over_time(%s{job='%s-podmonitoring'}[%.0fs])" % (metric, backend, duration),
-        "Max": "max_over_time(%s{job='%s-podmonitoring'}[%.0fs])" % (metric, backend, duration),
-        "P90": "quantile_over_time(0.9, %s{job='%s-podmonitoring'}[%.0fs])" % (metric, backend, duration),
-        "P99": "quantile_over_time(0.99, %s{job='%s-podmonitoring'}[%.0fs])" % (metric, backend, duration),
-    },
+        "Mean": "avg_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "Median": "quantile_over_time(0.5, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "Sd": "stddev_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "Min": "min_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "Max": "max_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "P90": "quantile_over_time(0.9, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "P95": "quantile_over_time(0.95, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "P99": "quantile_over_time(0.99, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+      },
       "histogram": {
-        "Mean": "sum(rate(%s_sum{job='%s-podmonitoring'}[%.0fs])) / sum(rate(%s_count{job='%s-podmonitoring'}[%.0fs]))" % (metric, backend, duration, metric, backend, duration),
-        "Median": "histogram_quantile(0.5, sum(rate(%s_bucket{job='%s-podmonitoring'}[%.0fs])) by (le))" % (metric, backend, duration),
-        "Min": "histogram_quantile(0, sum(rate(%s_bucket{job='%s-podmonitoring'}[%.0fs])) by (le))" % (metric, backend, duration),
-        "Max": "histogram_quantile(1, sum(rate(%s_bucket{job='%s-podmonitoring'}[%.0fs])) by (le))" % (metric, backend, duration),
-        "P90": "histogram_quantile(0.9, sum(rate(%s_bucket{job='%s-podmonitoring'}[%.0fs])) by (le))" % (metric, backend, duration),
-        "P99": "histogram_quantile(0.99, sum(rate(%s_bucket{job='%s-podmonitoring'}[%.0fs])) by (le))" % (metric, backend, duration),
-    }
+        "Mean": "sum(rate(%s_sum{job='%s',namespace='%s'}[%.0fs])) / sum(rate(%s_count{job='%s',namespace='%s'}[%.0fs]))" % (metric, job, namespace, duration, metric, job, namespace, duration),
+        "Median": "histogram_quantile(0.5, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
+        "Min": "histogram_quantile(0, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
+        "Max": "histogram_quantile(1, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
+        "P90": "histogram_quantile(0.9, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
+        "P95": "histogram_quantile(0.95, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
+        "P99": "histogram_quantile(0.99, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
+      },
+      "counter": {
+        "Sum": "sum_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "Rate": "rate(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "Increase": "increase(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "Mean": "avg_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
+        "Max": "max_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
+        "Min": "min_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
+        "P90": "quantile_over_time(0.9, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
+        "P95": "quantile_over_time(0.5, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
+        "P99": "quantile_over_time(0.99, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
+      },
   }
     for query_name, query in queries[metric_type].items():
       # Configure respective query
       url='https://monitoring.googleapis.com/v1/projects/%s/location/global/prometheus/api/v1/query' % (project_id)
       headers_api = {'Authorization': 'Bearer ' + credentials.token}
       params = {'query': query}
-      print(f"Finding {query_name} {metric} with the following query: {query}")
+      logger.debug(f"Finding {query_name} {metric} with the following query: {query}")
       request_post = requests.get(url=url, headers=headers_api, params=params)
       response = request_post.json()
 
-      print(f"Got response from metrics server: {response}")
+      logger.debug(f"Got response from metrics server: {response}")
 
       # handle response
       if request_post.ok:
-        if response["status"] == "success":
+        if response["status"] == "success" and response["data"] and response["data"]["result"]:
           metric_results[query_name] = float(response["data"]["result"][0]["value"][1])
-          print("%s: %s" % (query_name, response["data"]["result"][0]["value"][1]))
+          logger.debug("%s: %s" % (query_name, response["data"]["result"][0]["value"][1]))
         else:
-          print("Cloud Monitoring PromQL Error: %s" % (response["error"]))
+          logger.debug("Cloud Monitoring PromQL Error: %s" % (response))
+          return server_metrics
       else:
-        print("HTTP Error: %s" % (response))
+        logger.debug("HTTP Error: %s" % (response))
+        return server_metrics
     server_metrics[metric] = metric_results
   return server_metrics
 
@@ -791,7 +826,7 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
 
   server_metrics = {}
   if args.scrape_server_metrics:
-    server_metrics = print_metrics(metrics_to_scrape(args.backend), benchmark_duration, args.backend)
+    server_metrics = print_metrics(metrics_to_scrape(args.backend), benchmark_duration, args.pm_namespace, args.pm_job)
   if args.save_json_results:
     save_json_results(args, benchmark_result, server_metrics, model, errors)
 
@@ -1018,5 +1053,15 @@ if __name__ == "__main__":
       action="store_true",
       help="Whether to scrape server metrics.",
   )
+  parser.add_argument("--pm-namespace", type=str, default="default", help="namespace of the pod monitoring object, ignored if scrape-server-metrics is false")
+  parser.add_argument("--pm-job", type=str, default="vllm-podmonitoring", help="name of the pod monitoring object, ignored if scrape-server-metrics is false")
   cmd_args = parser.parse_args()
+  
+  level = logging.INFO
+  logger = logging.getLogger(__name__)
+  logger.setLevel(level)
+  handler = logging.StreamHandler()  # This sends output to the console
+  handler.setLevel(level) # Set handler level
+  logger.addHandler(handler)
+  
   asyncio.run(main(cmd_args))
