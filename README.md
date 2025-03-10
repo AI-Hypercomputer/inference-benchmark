@@ -38,3 +38,10 @@ python3 benchmark_serving.py --save-json-results --host=$IP  --port=$PORT --data
 ```
 ./latency_throughput_curve.sh
 ```
+
+7. You can build a container to run the benchmark directly on a Kubernetes cluster
+using the specified Dockerfile.
+
+```
+docker build -t inference-benchmark .
+```

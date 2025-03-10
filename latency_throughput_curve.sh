@@ -36,13 +36,18 @@ for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
   else
     num_prompts=$(awk "BEGIN {print int($request_rate * $BENCHMARK_TIME_SECONDS)}")
   fi
+  
   echo "TOTAL prompts: $num_prompts"
   
   # Build the python command options
-  PYTHON_OPTS="$PYTHON_OPTS --save-json-results --output-bucket=$OUTPUT_BUCKET --host=$IP --port=$PORT --dataset=$PROMPT_DATASET_FILE --tokenizer=$TOKENIZER --request-rate=$request_rate --backend=$BACKEND --num-prompts=$num_prompts --max-input-length=$INPUT_LENGTH --max-output-length=$OUTPUT_LENGTH --file-prefix=$FILE_PREFIX --models=$MODELS"
+  PYTHON_OPTS="$PYTHON_OPTS --save-json-results --host=$IP --port=$PORT --dataset=$PROMPT_DATASET_FILE --tokenizer=$TOKENIZER --request-rate=$request_rate --backend=$BACKEND --num-prompts=$num_prompts --max-input-length=$INPUT_LENGTH --max-output-length=$OUTPUT_LENGTH --file-prefix=$FILE_PREFIX --models=$MODELS"
 
   if [[ "$TRAFFIC_SPLIT" ]]; then
     PYTHON_OPTS="$PYTHON_OPTS --traffic-split=$TRAFFIC_SPLIT"
+  fi
+
+  if [[ "$OUTPUT_BUCKET" ]]; then
+    PYTHON_OPTS="$PYTHON_OPTS --output-bucket=$OUTPUT_BUCKET"
   fi
 
   if [[ "$SCRAPE_SERVER_METRICS" = "true" ]]; then
