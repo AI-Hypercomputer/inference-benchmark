@@ -495,7 +495,7 @@ async def benchmark(
             per_model_results[chosen_model]["itls"].extend(itl)
         if errors:
             for k, v in errors.items():
-                per_model_results[chosen_model]["errors"][k] += v    
+                per_model_results[chosen_model]["errors"][k] += v
 
     benchmark_duration = time.time() - benchmark_start_time
     
