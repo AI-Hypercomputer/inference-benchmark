@@ -454,7 +454,7 @@ async def benchmark(
     benchmark_start_time = time.time()
     tasks: List[asyncio.Task] = []
     prompts_sent = 0
-    async with aiohttp.ClientSession(trust_env=False, connector=aiohttp.TCPConnector(keepalive_timeout=30, enable_cleanup_closed=True, limit=28000,),timeout=None,) as clientSession:
+    async with aiohttp.ClientSession(trust_env=False, connector=aiohttp.TCPConnector(keepalive_timeout=30, enable_cleanup_closed=True, limit=28000,),timeout=None, trace_configs=[trace_config]) as clientSession:
       async for request in generate_next_request(input_requests, args.request_rate):
           if prompts_sent >= args.num_prompts:
               break
