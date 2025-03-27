@@ -16,7 +16,9 @@
 set -o xtrace
 
 export IP=$IP
+
 huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential
+
 if [[ "$PROMPT_DATASET" = "sharegpt" ]]; then
   PROMPT_DATASET_FILE="ShareGPT_V3_unfiltered_cleaned_split.json"
 fi
