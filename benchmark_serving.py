@@ -463,7 +463,6 @@ async def benchmark(
           task = asyncio.create_task(run_single_request(args, clientSession, api_url, tokenizer, prompt, prompt_len, output_len, chosen_model))
           tasks.append(task)
           prompts_sent += 1
-      print("send all requests")
       results = await asyncio.gather(*tasks)
 
     overall_results = {"latencies": [], "ttfts": [], "itls": [], "tpots": [], "errors": init_errors_map()}
