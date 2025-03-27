@@ -1056,7 +1056,7 @@ if __name__ == "__main__":
   parser.add_argument("--pm-job", type=str, default="vllm-podmonitoring", help="name of the pod monitoring object, ignored if scrape-server-metrics is false")
   cmd_args = parser.parse_args()
   
-  level = logging.DEBUG
+  level = logging.INFO
   logger = logging.getLogger(__name__)
   logger.setLevel(level)
   handler = logging.StreamHandler()  # This sends output to the console
