@@ -479,6 +479,8 @@ async def benchmark(
         latency, ttft, itl, errors = res
 
         prompt_len, output_len, request_latency = latency
+
+        # `latency` and `errors` are mutually exclusive
         if errors:
           for k, v in errors.items():
             overall_results["errors"][k] += v
