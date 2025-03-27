@@ -34,6 +34,8 @@ BASE_PYTHON_OPTS=(
 [[ "$STREAM_REQUEST" = "true" ]] && BASE_PYTHON_OPTS+=("--stream-request")
 [[ "$OUTPUT_BUCKET_FILEPATH" ]] && BASE_PYTHON_OPTS+=("--output-bucket-filepath" "$OUTPUT_BUCKET_FILEPATH")
 
+SLEEP_TIME=${SLEEP_TIME:-0}
+
 for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
   echo "Benchmarking request rate: ${request_rate}"
   timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
@@ -51,7 +53,7 @@ for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
   
   $PYTHON "${PYTHON_OPTS[@]}" > "$output_file"
   cat "$output_file"
-  sleep 30
+  sleep $SLEEP_TIME
 done
 
 export LPG_FINISHED="true"
