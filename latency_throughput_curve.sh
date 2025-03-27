@@ -52,6 +52,7 @@ SLEEP_TIME=${SLEEP_TIME:-0}
 
 for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
   echo "Benchmarking request rate: ${request_rate}"
+  # TODO: Check if profile already exists, if so then skip
   timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
   output_file="latency-profile-${timestamp}.txt"
   
