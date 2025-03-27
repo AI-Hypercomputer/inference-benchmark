@@ -73,6 +73,8 @@ def get_filtered_dataset(
     dataset_path: str,
     max_input_len: int,
     max_output_len: int,
+    min_input_len: int,
+    min_output_len: int,
     tokenizer: PreTrainedTokenizerBase,
     use_dummy_text: bool,
 ) -> List[Tuple[str, int, int]]:
@@ -111,7 +113,7 @@ def get_filtered_dataset(
   filtered_dataset: List[Tuple[str, int, int]] = []
   for prompt, prompt_token_ids, output_len in tokenized_dataset:
     prompt_len = len(prompt_token_ids)
-    if prompt_len < MIN_SEQ_LEN or output_len < MIN_SEQ_LEN:
+    if prompt_len < min_input_len or output_len < min_output_len:
       # Prune too short sequences.
       # This is because TGI causes errors when the input or output length
       # is too short.
@@ -154,6 +156,7 @@ def init_errors_map() -> Dict[str, int]:
 async def send_stream_request(
     backend: str,
     api_url: str,
+    dummy_url: str,
     prompt: str,
     prompt_len: int,
     output_len: int,
@@ -261,6 +264,7 @@ async def send_stream_request(
 async def send_request(
     backend: str,
     api_url: str,
+    dummy_url: str,
     prompt: str,
     prompt_len: int,
     output_len: int,
@@ -287,7 +291,7 @@ async def send_request(
         "temperature": 0.0 if use_beam_search else 1.0,
         "top_p": 1.0,
         "max_tokens": output_len,
-        "ignore_eos": False,
+        "ignore_eos": True,
         "stream": False,
     }
   elif backend == "tgi":
@@ -345,12 +349,14 @@ async def send_request(
 
   # Set client timeout to be 3 hrs.
   timeout = aiohttp.ClientTimeout(total=timeout)
-  async with aiohttp.ClientSession(timeout=timeout,trust_env=True,trace_configs=[trace_config]) as session:
+  async with aiohttp.ClientSession(timeout=timeout,trust_env=True,) as session:
     while True:
       try:
         async with session.post(api_url, headers=headers, json=pload, ssl=False) as response:
           output = await response.json()
-
+        request_end_time = time.time()
+        async with session.post(dummy_url, headers={}, ssl=False) as _:
+                pass
         # Re-send the request if it failed.
         if "error" not in output:
           break
@@ -379,7 +385,7 @@ async def send_request(
         errors["unknown_error"] += 1
         return None, None, None, errors
 
-  request_end_time = time.time()
+  
   # Naive HF transformers generation and TensorRT-LLM generation stops at EOS
   # tokens and the generation may be shorter than the ground-truth output
   # sequence length.
@@ -415,20 +421,21 @@ async def send_request(
 
 
 async def run_single_request(args: argparse.Namespace, api_url: str, tokenizer: PreTrainedTokenizerBase,
-                               prompt: str, prompt_len: int, output_len: int, chosen_model: str) -> Tuple[str, Tuple]:
+                               prompt: str, prompt_len: int, output_len: int, chosen_model: str, dummy_url: str) -> Tuple[str, Tuple]:
     if args.stream_request:
         result = await send_stream_request(
-            args.backend, api_url, prompt, prompt_len, output_len,
+            args.backend, api_url, dummy_url, prompt, prompt_len, output_len,
             args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model, args.request_timeout,)
     else:
         result = await send_request(
-            args.backend, api_url, prompt, prompt_len, output_len,
+            args.backend, api_url, dummy_url, prompt, prompt_len, output_len,
             args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model, args.request_timeout,)
     return chosen_model, result
 
 async def benchmark(
     args: argparse.Namespace, 
     api_url: str,
+    dummy_url: str,
     tokenizer: PreTrainedTokenizerBase,
     models: List[str],
     traffic_split: List[float],
@@ -437,7 +444,7 @@ async def benchmark(
     Also saves results separately for each model.
     """
     input_requests = get_filtered_dataset(
-        args.dataset, args.max_input_length, args.max_output_length, tokenizer, args.use_dummy_text)
+        args.dataset, args.max_input_length, args.max_output_length,  args.min_input_length, args.min_output_length,tokenizer, args.use_dummy_text)
     
     # Combine the models list and traffic split list into a dict
 
@@ -456,12 +463,18 @@ async def benchmark(
     benchmark_start_time = time.time()
     tasks: List[asyncio.Task] = []
     prompts_sent = 0
+    request_sent_delta = []
+    prev_request_sent_time = benchmark_start_time
     async for request in generate_next_request(input_requests, args.request_rate):
+        
         if prompts_sent >= args.num_prompts:
+            request_end_time = time.time()
             break
+        request_sent_delta.append(time.time() - prev_request_sent_time)
+        prev_request_sent_time = time.time()
         prompt, prompt_len, output_len = request
         chosen_model = random.choices(model_names, weights=model_weights)[0]
-        task = asyncio.create_task(run_single_request(args, api_url, tokenizer, prompt, prompt_len, output_len, chosen_model))
+        task = asyncio.create_task(run_single_request(args, api_url, tokenizer, prompt, prompt_len, output_len, chosen_model, dummy_url))
         tasks.append(task)
         prompts_sent += 1
 
@@ -494,13 +507,14 @@ async def benchmark(
               per_model_results[chosen_model]["itls"].extend(itl)     
 
     benchmark_duration = time.time() - benchmark_start_time
-    
-    print_and_save_result(args, benchmark_duration, prompts_sent, "weighted",
+    request_sent_duration = request_end_time - benchmark_start_time
+    avg_qps_sent = np.mean([1 / delta for delta in request_sent_delta[1:]])
+    print_and_save_result(args, benchmark_duration, avg_qps_sent, prompts_sent, "weighted",
                           overall_results["latencies"], overall_results["ttfts"],
                           overall_results["itls"], overall_results["tpots"],
                           overall_results["errors"])
     for model, data in per_model_results.items():
-        print_and_save_result(args, benchmark_duration, len(data["latencies"]), model,
+        print_and_save_result(args, benchmark_duration, avg_qps_sent, len(data["latencies"]), model,
                               data["latencies"], data["ttfts"], data["itls"],
                               data["tpots"], data["errors"])
 
@@ -764,13 +778,29 @@ def get_stats_for_set(name, description, points):
     f'p90_{name}': p90,
     f'p99_{name}': p99,
   }
-
-def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_requests, model, request_latencies, ttfts, itls, tpots, errors):
+def print_histogram(values, bucket_size, label):
+    if not values:
+        print(f"No data for {label}")
+        return
+    max_val = max(values)
+    num_buckets = (max_val // bucket_size) + 1
+    histogram = [0] * int(num_buckets)
+    for v in values:
+         bucket = v // bucket_size
+         histogram[int(bucket)] += 1
+    print(f"\nHistogram for {label} (bucket size {bucket_size}):")
+    for i, count in enumerate(histogram):
+         lower = i * bucket_size
+         upper = (i+1) * bucket_size - 1
+         print(f"  {lower:3d}-{upper:3d}: {count}")
+         
+def print_and_save_result(args: argparse.Namespace, benchmark_duration, avg_qps_sent, total_requests, model, request_latencies, ttfts, itls, tpots, errors):
   benchmark_result = {}
 
   print(f"====Result for Model: {model}====")
   print(f"Errors: {errors}")
   print(f"Total time: {benchmark_duration:.2f} s")
+  print(f"Effective qps: {avg_qps_sent:.2f}")
   print(f"Successful/total requests: {len(request_latencies)}/{total_requests}")
   print(f"Requests/min: {60 * total_requests / benchmark_duration:.2f}")
   benchmark_result["num_prompts_attempted"] = total_requests
@@ -800,6 +830,12 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
   print(f"Tokens/min: {tokens_per_min:.2f}")
   benchmark_result['total_tokens'] = int(total_tokens)
   benchmark_result['tokens_per_min'] = tokens_per_min
+    # --- Added code to print histograms ---
+  #input_lengths = [prompt_len for prompt_len, _, _ in request_latencies]
+  #output_lengths = [output_len for _, output_len, _ in request_latencies]
+  #print_histogram(input_lengths, 50, "Input Token Lengths")
+  #print_histogram(output_lengths, 50, "Output Token Lengths")
+  
   ttft_stats = {}
   itls_stats = {}
   tpot_stats = {}
@@ -874,8 +910,9 @@ async def main(args: argparse.Namespace):
 
   benchmark_start_time = time.time()
   args.start_datetime = datetime.fromtimestamp(benchmark_start_time)
+  dummy_url = f"http://{args.host}:{args.port}/health" if args.dummy_url is None else args.dummy_url
   
-  await benchmark(args, api_url, tokenizer,models, args.traffic_split)
+  await benchmark(args, api_url, dummy_url, tokenizer,models, args.traffic_split)
   
 
 
@@ -974,6 +1011,22 @@ if __name__ == "__main__":
       ),
   )
   parser.add_argument(
+      "--min-input-length",
+      type=int,
+      default=4,
+      help=(
+          "Minimum number of input tokens for filtering the benchmark dataset."
+      ),
+  )
+  parser.add_argument(
+      "--min-output-length",
+      type=int,
+      default=4,
+      help=(
+          "Minimum number of output tokens for filtering the benchmark dataset."
+      ),
+  )
+  parser.add_argument(
       "--top-k",
       type=int,
       default=32000,
@@ -1058,8 +1111,10 @@ if __name__ == "__main__":
       action="store_true",
       help="Whether to scrape server metrics.",
   )
+  parser.add_argument("--dummy-url", type=str)
   parser.add_argument("--pm-namespace", type=str, default="default", help="namespace of the pod monitoring object, ignored if scrape-server-metrics is false")
   parser.add_argument("--pm-job", type=str, default="vllm-podmonitoring", help="name of the pod monitoring object, ignored if scrape-server-metrics is false")
+
   cmd_args = parser.parse_args()
   
   level = logging.INFO

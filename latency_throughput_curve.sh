@@ -16,6 +16,7 @@
 set -o xtrace
 
 export IP=$IP
+export VLLM_USE_V1="1"
 
 huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential
 
@@ -26,7 +27,7 @@ fi
 PYTHON="python3"
 PYTHON_OPTS="benchmark_serving.py "
 for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
-  echo "Benchmarking request rate: ${request_rate}"
+  echo "Benchmaking request rate: ${request_rate}"
   # TODO: Check if profile already exists, if so then skip
   timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
   output_file="latency-profile-${timestamp}.txt"
@@ -36,20 +37,11 @@ for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
   else
     num_prompts=$(awk "BEGIN {print int($request_rate * $BENCHMARK_TIME_SECONDS)}")
   fi
-  
-  echo "TOTAL prompts: $num_prompts"
-  
-  # Build the python command options
-  PYTHON_OPTS="$PYTHON_OPTS --save-json-results --host=$IP --port=$PORT --dataset=$PROMPT_DATASET_FILE --tokenizer=$TOKENIZER --request-rate=$request_rate --backend=$BACKEND --num-prompts=$num_prompts --max-input-length=$INPUT_LENGTH --max-output-length=$OUTPUT_LENGTH --file-prefix=$FILE_PREFIX --models=$MODELS --pm-namespace=$PM_NAMESPACE --pm-job=$PM_JOB"
-
-  if [[ "$TRAFFIC_SPLIT" ]]; then
-    PYTHON_OPTS="$PYTHON_OPTS --traffic-split=$TRAFFIC_SPLIT"
-  fi
-
+  echo "TOTAL prompts: $num_prompts"  # Output: 8
+  PYTHON_OPTS="$PYTHON_OPTS --save-json-results --host=$IP  --port=$PORT --dataset=$PROMPT_DATASET_FILE --tokenizer=$TOKENIZER --request-rate=$request_rate --backend=$BACKEND --num-prompts=$num_prompts  --max-input-length=$INPUT_LENGTH --max-output-length=$OUTPUT_LENGTH --file-prefix=$FILE_PREFIX --models=$MODELS"
   if [[ "$OUTPUT_BUCKET" ]]; then
     PYTHON_OPTS="$PYTHON_OPTS --output-bucket=$OUTPUT_BUCKET"
   fi
-
   if [[ "$SCRAPE_SERVER_METRICS" = "true" ]]; then
     PYTHON_OPTS="$PYTHON_OPTS --scrape-server-metrics"
   fi
@@ -60,12 +52,26 @@ for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
     PYTHON_OPTS="$PYTHON_OPTS --stream-request"
   fi
   if [[ "$OUTPUT_BUCKET_FILEPATH" ]]; then
-    PYTHON_OPTS="$PYTHON_OPTS --output-bucket-filepath $OUTPUT_BUCKET_FILEPATH"
+    PYTHON_OPTS="$PYTHON_OPTS --output-bucket-filepath  $OUTPUT_BUCKET_FILEPATH"
   fi
-  
+  if [[ "$MIN_INPUT_LENGTH" ]]; then
+    PYTHON_OPTS="$PYTHON_OPTS --min-input-length  $MIN_OUTPUT_LENGTH"
+  fi
+  if [[ "$MIN_OUTPUT_LENGTH" ]]; then
+    PYTHON_OPTS="$PYTHON_OPTS --min-output-length  $MIN_OUTPUT_LENGTH"
+  fi
+  if [[ "$DUMMY_URL" ]]; then
+    PYTHON_OPTS="$PYTHON_OPTS --dummy-url  $DUMMY_URL"
+  fi
+  if [[ "$PM_NAMESPACE" ]]; then
+    PYTHON_OPTS="$PYTHON_OPTS --pm-namespace  $PM_NAMESPACE"
+  fi
+  if [[ "$PM_JOB" ]]; then
+    PYTHON_OPTS="$PYTHON_OPTS --pm-job  $PM_JOB"
+  fi
   $PYTHON $PYTHON_OPTS > $output_file
   cat $output_file
-  sleep 30 # wait 30 seconds before next run to ensure metrics isolation
+  sleep 30 # wait 30 seconds before next run to ensure metrics isolation (metrics pulled every 15s)
 done
 
 export LPG_FINISHED="true"
