@@ -62,7 +62,7 @@ for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
   if [[ "$OUTPUT_BUCKET_FILEPATH" ]]; then
     PYTHON_OPTS="$PYTHON_OPTS --output-bucket-filepath $OUTPUT_BUCKET_FILEPATH"
   fi
-
+  
   $PYTHON $PYTHON_OPTS > $output_file
   cat $output_file
   sleep 30 # wait 30 seconds before next run to ensure metrics isolation
