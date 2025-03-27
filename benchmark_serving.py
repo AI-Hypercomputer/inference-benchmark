@@ -349,8 +349,6 @@ async def send_request(
     try:
       async with clientSession.post(api_url, headers=headers, json=pload, ssl=False, timeout=None) as response:
         output = await response.json()
-      # async with clientSession.head("http://vllm-inference-server:8000/metrics", headers={}, ssl=False) as _:
-      #         pass
       # Re-send the request if it failed.
       if "error" not in output:
         break
