@@ -54,13 +54,16 @@ request_latency_per_output_token_metric = Histogram('LatencyProfileGenerator:req
 tpot_metric = Histogram('LatencyProfileGenerator:time_per_output_token', 'Time per output token per request (excluding first token)')
 ttft_metric = Histogram('LatencyProfileGenerator:time_to_first_token', 'Time to first token per request')
 active_requests_metric = Gauge('LatencyProfileGenerator:active_requests', 'How many requests actively being processed')
+active_connections_metric = Gauge('LatencyProfileGenerator:active_connections', 'How many active connections')
 
 # Add trace config for monitoring in flight requests
 async def on_request_start(session, trace_config_ctx, params):
     active_requests_metric.inc()
+    active_connections_metric.set(len(session.connector._acquired))
 
 async def on_request_end(session, trace_config_ctx, params):
     active_requests_metric.dec()
+    active_connections_metric.set(len(session.connector._acquired))
 
 trace_config = aiohttp.TraceConfig()
 trace_config.on_request_start.append(on_request_start)
