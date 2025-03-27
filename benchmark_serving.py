@@ -476,15 +476,12 @@ async def benchmark(
         if res is None:
             continue
         latency, ttft, itl, errors = res
-
-        prompt_len, output_len, request_latency = latency
-
-        # `latency` and `errors` are mutually exclusive
         if errors:
           for k, v in errors.items():
             overall_results["errors"][k] += v
             per_model_results[chosen_model]["errors"][k] += v
         elif latency:
+          prompt_len, output_len, request_latency = latency
           overall_results["latencies"].append(latency)
           per_model_results[chosen_model]["latencies"].append(latency)
           if ttft:
