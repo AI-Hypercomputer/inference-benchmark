@@ -53,6 +53,7 @@ for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
   
   $PYTHON "${PYTHON_OPTS[@]}" > "$output_file"
   cat "$output_file"
+  echo "Sleeping for $SLEEP_TIME seconds..."
   sleep $SLEEP_TIME
 done
 
