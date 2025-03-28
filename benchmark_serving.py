@@ -66,7 +66,7 @@ async def on_request_start(session, trace_config_ctx, params):
     active_requests_metric.inc()
     active_connections_metric.set(len(session.connector._acquired))
     if not logged_exhausted_ports and len(session.connector._acquired) == CONNECTIONS_LIMIT:
-      print("Warning: Connection limit reached. Server metrics may be missing or inaccurate")
+      print("Warning: Connection limit reached. Server metrics will not be omitted due to innacruacy")
       logged_exhausted_ports = True
 
 
@@ -840,7 +840,7 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
   }
 
   server_metrics = {}
-  if args.scrape_server_metrics:
+  if args.scrape_server_metrics and :
     server_metrics = print_metrics(metrics_to_scrape(args.backend), benchmark_duration, args.pm_namespace, args.pm_job)
   if args.save_json_results:
     save_json_results(args, benchmark_result, server_metrics, model, errors)
