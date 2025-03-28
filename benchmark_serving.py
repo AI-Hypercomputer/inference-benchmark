@@ -157,6 +157,7 @@ async def send_stream_request(
     prompt: str,
     prompt_len: int,
     output_len: int,
+    ignore_eos: bool,
     best_of: int,
     use_beam_search: bool,
     top_k: int,
@@ -180,7 +181,7 @@ async def send_stream_request(
         "temperature": 0.0 if use_beam_search else 1.0,
         "top_p": 1.0,
         "max_tokens": output_len,
-        "ignore_eos": True,
+        "ignore_eos": ignore_eos,
         "stream": True,
     }
   elif backend == "jetstream":
@@ -264,6 +265,7 @@ async def send_request(
     prompt: str,
     prompt_len: int,
     output_len: int,
+    ignore_eos: bool,
     best_of: int,
     use_beam_search: bool,
     top_k: int,
@@ -287,7 +289,7 @@ async def send_request(
         "temperature": 0.0 if use_beam_search else 1.0,
         "top_p": 1.0,
         "max_tokens": output_len,
-        "ignore_eos": False,
+        "ignore_eos": ignore_eos,
         "stream": False,
     }
   elif backend == "tgi":
@@ -418,11 +420,11 @@ async def run_single_request(args: argparse.Namespace, api_url: str, tokenizer: 
                                prompt: str, prompt_len: int, output_len: int, chosen_model: str) -> Tuple[str, Tuple]:
     if args.stream_request:
         result = await send_stream_request(
-            args.backend, api_url, prompt, prompt_len, output_len,
+            args.backend, api_url, prompt, prompt_len, output_len, args.ignore_eos,
             args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model, args.request_timeout,)
     else:
         result = await send_request(
-            args.backend, api_url, prompt, prompt_len, output_len,
+            args.backend, api_url, prompt, prompt_len, output_len, args.ignore_eos,
             args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model, args.request_timeout,)
     return chosen_model, result
 
@@ -972,6 +974,14 @@ if __name__ == "__main__":
       help=(
           "Maximum number of input tokens for filtering the benchmark dataset."
       ),
+  )
+  parser.add_argument(
+    "--ignore-eos",
+    action="store_true",
+    help=(
+        "If set, the generation process will ignore the end-of-sequence (EOS) token, "
+        "allowing output to continue until reaching --max-output-length or another stopping condition."
+    ),
   )
   parser.add_argument(
       "--top-k",
