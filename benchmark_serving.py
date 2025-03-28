@@ -57,7 +57,7 @@ ttft_metric = Histogram('LatencyProfileGenerator:time_to_first_token', 'Time to 
 active_requests_metric = Gauge('LatencyProfileGenerator:active_requests', 'How many requests actively being processed')
 active_connections_metric = Gauge('LatencyProfileGenerator:active_connections', 'How many active connections')
 
-# Should only print an `exhausted connections` warning once per run to not pollute the logs
+# Exhaused connections warning should only be printed once per run
 logged_exhausted_ports = False
 
 # Add trace config for monitoring in flight requests
