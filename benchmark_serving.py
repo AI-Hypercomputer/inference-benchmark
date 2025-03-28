@@ -58,16 +58,16 @@ active_requests_metric = Gauge('LatencyProfileGenerator:active_requests', 'How m
 active_connections_metric = Gauge('LatencyProfileGenerator:active_connections', 'How many active connections')
 
 # Exhaused connections warning should only be printed once per run
-logged_exhausted_ports = False
+connection_limit_reached = False
 
 # Add trace config for monitoring in flight requests
 async def on_request_start(session, trace_config_ctx, params):
-    global logged_exhausted_ports
+    global connection_limit_reached
     active_requests_metric.inc()
     active_connections_metric.set(len(session.connector._acquired))
-    if not logged_exhausted_ports and len(session.connector._acquired) == CONNECTIONS_LIMIT:
-      print("Warning: Connection limit reached. Server metrics will not be omitted due to innacruacy")
-      logged_exhausted_ports = True
+    if not connection_limit_reached and len(session.connector._acquired) == CONNECTIONS_LIMIT:
+      print("Warning: Connection limit reached. Omitting server metrics due to inaccuracy")
+      connection_limit_reached = True
 
 
 async def on_request_end(session, trace_config_ctx, params):
@@ -840,7 +840,8 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
   }
 
   server_metrics = {}
-  if args.scrape_server_metrics and :
+  global connection_limit_reached
+  if args.scrape_server_metrics and not connection_limit_reached:
     server_metrics = print_metrics(metrics_to_scrape(args.backend), benchmark_duration, args.pm_namespace, args.pm_job)
   if args.save_json_results:
     save_json_results(args, benchmark_result, server_metrics, model, errors)
