@@ -66,7 +66,7 @@ async def on_request_start(session, trace_config_ctx, params):
     active_requests_metric.inc()
     active_connections_metric.set(len(session.connector._acquired))
     if not logged_exhausted_ports and len(session.connector._acquired) == CONNECTIONS_LIMIT:
-      print("Warning: Connection limit reached. Some Prometheus metrics may be missing or inaccurate due to exhausted ports.")
+      print("Warning: Connection limit reached. Server metrics may be missing or inaccurate")
       logged_exhausted_ports = True
 
 
