@@ -46,6 +46,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 MIN_SEQ_LEN = 4
 NEW_TEXT_KEY = "\nOutput:\n"
 PROMETHEUS_PORT = 9090
+CONNECTIONS_LIMIT = 28000
 
 # Prometheus Metrics
 prompt_length_metric = Histogram("LatencyProfileGenerator:prompt_length", "Input prompt length", buckets=[2**i for i in range(1, 16)])
@@ -56,10 +57,18 @@ ttft_metric = Histogram('LatencyProfileGenerator:time_to_first_token', 'Time to 
 active_requests_metric = Gauge('LatencyProfileGenerator:active_requests', 'How many requests actively being processed')
 active_connections_metric = Gauge('LatencyProfileGenerator:active_connections', 'How many active connections')
 
+# Should only print an `exhausted connections` warning once per run to not pollute the logs
+logged_exhausted_ports = False
+
 # Add trace config for monitoring in flight requests
 async def on_request_start(session, trace_config_ctx, params):
+    global logged_exhausted_ports  # Explicitly reference the global variable
     active_requests_metric.inc()
     active_connections_metric.set(len(session.connector._acquired))
+    if not logged_exhausted_ports and len(session.connector._acquired) == CONNECTIONS_LIMIT:
+      print("Warning: Connection limit reached. Some Prometheus metrics may be missing or inaccurate due to exhausted ports.")
+      logged_exhausted_ports = True
+
 
 async def on_request_end(session, trace_config_ctx, params):
     active_requests_metric.dec()
@@ -457,7 +466,7 @@ async def benchmark(
     benchmark_start_time = time.time()
     tasks: List[asyncio.Task] = []
     prompts_sent = 0
-    async with aiohttp.ClientSession(trust_env=False, connector=aiohttp.TCPConnector(keepalive_timeout=30, enable_cleanup_closed=True, limit=28000,),timeout=None, trace_configs=[trace_config]) as clientSession:
+    async with aiohttp.ClientSession(trust_env=False, connector=aiohttp.TCPConnector(keepalive_timeout=30, enable_cleanup_closed=True, limit=CONNECTIONS_LIMIT,),timeout=None, trace_configs=[trace_config]) as clientSession:
       async for request in generate_next_request(input_requests, args.request_rate):
           if prompts_sent >= args.num_prompts:
               break
