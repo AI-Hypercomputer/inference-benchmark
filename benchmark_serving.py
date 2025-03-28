@@ -62,7 +62,7 @@ logged_exhausted_ports = False
 
 # Add trace config for monitoring in flight requests
 async def on_request_start(session, trace_config_ctx, params):
-    global logged_exhausted_ports  # Explicitly reference the global variable
+    global logged_exhausted_ports
     active_requests_metric.inc()
     active_connections_metric.set(len(session.connector._acquired))
     if not logged_exhausted_ports and len(session.connector._acquired) == CONNECTIONS_LIMIT:
