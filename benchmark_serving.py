@@ -979,7 +979,7 @@ if __name__ == "__main__":
     "--ignore-eos",
     action="store_true",
     help=(
-        "If set, the generation process will ignore the end-of-sequence (EOS) token, "
+        "If set and model server is vllm, the generation process will ignore the end-of-sequence (EOS) token, "
         "allowing output to continue until reaching --max-output-length or another stopping condition."
     ),
   )
