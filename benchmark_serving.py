@@ -545,13 +545,13 @@ def save_json_results(args: argparse.Namespace, benchmark_result, server_metrics
       "stats": [{
         "request_rate": args.request_rate,
         "request_latency": {
-          "mean": benchmark_result["avg_latency"],
-          "median": benchmark_result["median_latency"],
-          "sd": benchmark_result["sd_latency"],
-          "min": benchmark_result["min_latency"],
-          "max": benchmark_result["max_latency"],
-          "p90": benchmark_result["p90_latency"],
-          "p99": benchmark_result["p99_latency"],
+          "mean": benchmark_result["avg_latency_ms"],
+          "median": benchmark_result["median_latency_ms"],
+          "sd": benchmark_result["sd_latency_ms"],
+          "min": benchmark_result["min_latency_ms"],
+          "max": benchmark_result["max_latency_ms"],
+          "p90": benchmark_result["p90_latency_ms"],
+          "p99": benchmark_result["p99_latency_ms"],
         },
         "throughput": {
           "mean": benchmark_result['throughput']
@@ -575,13 +575,13 @@ def save_json_results(args: argparse.Namespace, benchmark_result, server_metrics
           "p99": benchmark_result["p99_output_len"],
         },
         "tpot": {
-          "mean": benchmark_result["avg_per_output_token_latency"],
-          "median": benchmark_result["median_per_output_token_latency"],
-          "sd": benchmark_result["sd_per_output_token_latency"],
-          "min": benchmark_result["min_per_output_token_latency"],
-          "max": benchmark_result["max_per_output_token_latency"],
-          "p90": benchmark_result["p90_per_output_token_latency"],
-          "p99": benchmark_result["p99_per_output_token_latency"],
+          "mean": benchmark_result["avg_per_output_token_latency_ms"],
+          "median": benchmark_result["median_per_output_token_latency_ms"],
+          "sd": benchmark_result["sd_per_output_token_latency_ms"],
+          "min": benchmark_result["min_per_output_token_latency_ms"],
+          "max": benchmark_result["max_per_output_token_latency_ms"],
+          "p90": benchmark_result["p90_per_output_token_latency_ms"],
+          "p99": benchmark_result["p99_per_output_token_latency_ms"],
         },
         "model_server_metrics" : [{"Name": name, **metrics} for name, metrics in server_metrics.items()]
       }]
@@ -823,8 +823,8 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
     **itls_stats,
     # NOTE: The latency below includes requests awaiting time on server side.
     # It's not comparable with the model inference latency for batch size 1.
-    **(get_stats_for_set("latency", "milliseconds/request (includes waiting time on server)" ,[latency for _, _, latency in request_latencies])),
-    **(get_stats_for_set("per_output_token_latency", "milliseconds/output_token (includes waiting time on server)", [latency / output_len for _, output_len, latency in request_latencies])),
+    **(get_stats_for_set("latency_ms", "milliseconds/request (includes waiting time on server)" ,[latency for _, _, latency in request_latencies])),
+    **(get_stats_for_set("per_output_token_latency_ms", "milliseconds/output_token (includes waiting time on server)", [latency / output_len for _, output_len, latency in request_latencies])),
     **(get_stats_for_set("input_len", "input length", [float(prompt_len) for prompt_len, _, _ in request_latencies])),
     **(get_stats_for_set("output_len", "output length", [float(output_len) for _, output_len, _ in request_latencies]))
   }
