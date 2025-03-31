@@ -774,7 +774,7 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
   print(f"Errors: {errors}")
   print(f"Total time: {benchmark_duration:.2f} s")
   print(f"Successful/total requests: {len(request_latencies)}/{total_requests}")
-  print(f"Requests/min: {60 * total_requests / benchmark_duration:.2f}")
+  print(f"Requests/sec: {total_requests / benchmark_duration:.2f}")
   benchmark_result["num_prompts_attempted"] = total_requests
   benchmark_result["num_prompts_succeeded"] = len(request_latencies)
   benchmark_result['benchmark_time'] = benchmark_duration
@@ -785,23 +785,21 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
   output_tokens_per_second = total_output_tokens / benchmark_duration
   benchmark_result['throughput'] = output_tokens_per_second
 
-  output_tokens_per_min = 60 * output_tokens_per_second
-  print(f"Output_tokens/min: {output_tokens_per_min:.2f}")
+  print(f"Output_tokens/sec: {output_tokens_per_second:.2f}")
   benchmark_result['total_output_token'] = int(total_output_tokens)
-  benchmark_result['output_tokens_per_min'] = output_tokens_per_min
 
   total_input_tokens = np.sum([prompt_len for prompt_len, _, _ in
                                request_latencies])
-  input_tokens_per_min = 60 * total_input_tokens / benchmark_duration
-  print(f"Input_tokens/min: {input_tokens_per_min:.2f}")
+  input_tokens_per_sec = total_input_tokens / benchmark_duration
+  print(f"Input_tokens/sec: {input_tokens_per_sec:.2f}")
   benchmark_result['total_input_tokens'] = int(total_input_tokens)
-  benchmark_result['input_tokens_per_min'] = input_tokens_per_min
+  benchmark_result['input_tokens_per_sec'] = input_tokens_per_sec
 
   total_tokens = total_input_tokens + total_output_tokens
-  tokens_per_min = 60 * total_tokens / benchmark_duration
-  print(f"Tokens/min: {tokens_per_min:.2f}")
+  tokens_per_sec = total_tokens / benchmark_duration
+  print(f"Tokens/sec: {tokens_per_sec:.2f}")
   benchmark_result['total_tokens'] = int(total_tokens)
-  benchmark_result['tokens_per_min'] = tokens_per_min
+  benchmark_result['tokens_per_sec'] = tokens_per_sec
   ttft_stats = {}
   itls_stats = {}
   tpot_stats = {}
@@ -812,7 +810,7 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
   if args.machine_cost:
     print(
         "Cost $/1k tokens:"
-        f" {args.machine_cost * 1000 / (60 * output_tokens_per_min)}"
+        f" {args.machine_cost * 1000 / output_tokens_per_second}"
     )
 
   benchmark_result = {
