@@ -195,7 +195,7 @@ async def send_stream_request(
 
   ttft = 0.0
   itl = []
-  st = time.perf_counter()
+  st = 1000 * time.perf_counter()
   most_recent_timestamp = st
   output = ""
   timeout = aiohttp.ClientTimeout(total=timeout)
@@ -206,7 +206,7 @@ async def send_stream_request(
           chunk_bytes = chunk_bytes[0].strip()
           if not chunk_bytes:
               continue
-          timestamp = time.perf_counter()
+          timestamp = 1000 * time.perf_counter()
           # First token
           if ttft == 0.0:
             ttft = timestamp - st
@@ -815,7 +815,7 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
 
   benchmark_result = {
     **benchmark_result,
-    **(get_stats_for_set("per_token_latency", "milliseconds/token (includes waiting time on server)", [
+    **(get_stats_for_set("per_token_latency_ms", "milliseconds/token (includes waiting time on server)", [
       latency / (prompt_len + output_len)
       for prompt_len, output_len, latency in request_latencies
     ])),
