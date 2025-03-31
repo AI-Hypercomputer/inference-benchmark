@@ -49,9 +49,9 @@ PROMETHEUS_PORT = 9090
 # Prometheus Metrics
 prompt_length_metric = Histogram("LatencyProfileGenerator:prompt_length", "Input prompt length", buckets=[2**i for i in range(1, 16)])
 response_length_metric = Histogram("LatencyProfileGenerator:response_length", "Response length", buckets=[2**i for i in range(1, 16)])
-request_latency_per_output_token_metric = Histogram('LatencyProfileGenerator:request_latency_per_output_token_ms', 'Time per output token per request (including first token) in milliseconds')
-tpot_metric = Histogram('LatencyProfileGenerator:time_per_output_token_ms', 'Time per output token per request (excluding first token) in milliseconds')
-ttft_metric = Histogram('LatencyProfileGenerator:time_to_first_token_ms', 'Time to first token per request')
+request_latency_per_output_token_metric = Histogram('LatencyProfileGenerator:request_latency_per_output_token_ms', 'Time per output token per request (including first token) in milliseconds', buckets=[2**i for i in range(1, 16)])
+tpot_metric = Histogram('LatencyProfileGenerator:time_per_output_token_ms', 'Time per output token per request (excluding first token) in milliseconds', buckets=[2**i for i in range(1, 16)])
+ttft_metric = Histogram('LatencyProfileGenerator:time_to_first_token_ms', 'Time to first token per request in milliseconds', buckets=[2**i for i in range(1, 16)])
 active_requests_metric = Gauge('LatencyProfileGenerator:active_requests', 'How many requests actively being processed')
 
 # Add trace config for monitoring in flight requests
