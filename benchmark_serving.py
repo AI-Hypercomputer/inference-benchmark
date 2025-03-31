@@ -815,7 +815,7 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
 
   benchmark_result = {
     **benchmark_result,
-    **(get_stats_for_set("per_token_latency_ms", "milliseconds/token (includes waiting time on server)", [
+    **(get_stats_for_set("per_token_latency_ms", "milliseconds/token (includes waiting time on server) in milliseconds", [
       latency / (prompt_len + output_len)
       for prompt_len, output_len, latency in request_latencies
     ])),
@@ -823,8 +823,8 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
     **itls_stats,
     # NOTE: The latency below includes requests awaiting time on server side.
     # It's not comparable with the model inference latency for batch size 1.
-    **(get_stats_for_set("latency_ms", "milliseconds/request (includes waiting time on server)" ,[latency for _, _, latency in request_latencies])),
-    **(get_stats_for_set("per_output_token_latency_ms", "milliseconds/output_token (includes waiting time on server)", [latency / output_len for _, output_len, latency in request_latencies])),
+    **(get_stats_for_set("latency_ms", "milliseconds/request (includes waiting time on server) in milliseconds" ,[latency for _, _, latency in request_latencies])),
+    **(get_stats_for_set("per_output_token_latency_ms", "milliseconds/output_token (includes waiting time on server) in milliseconds", [latency / output_len for _, output_len, latency in request_latencies])),
     **(get_stats_for_set("input_len", "input length", [float(prompt_len) for prompt_len, _, _ in request_latencies])),
     **(get_stats_for_set("output_len", "output length", [float(output_len) for _, output_len, _ in request_latencies]))
   }
