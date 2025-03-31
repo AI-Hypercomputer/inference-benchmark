@@ -167,7 +167,7 @@ async def send_stream_request(
     timeout: float,
 ) -> Tuple[Tuple[int, int, float], float, List[float], Dict[str, int]]:
   """Sends stream request to server"""
-  request_start_time = time.time()
+  request_start_time = 1000 * time.time()
   errors = init_errors_map()
 
   headers = {"User-Agent": "Benchmark Client"}
@@ -244,17 +244,17 @@ async def send_stream_request(
       print(f"Unknown error {e}")
       errors["unknown_error"] += 1
       return None, None, None, errors
-  request_end_time = time.time()
+  request_end_time = 1000 * time.time()
   output_token_ids = tokenizer(output).input_ids
   output_len = len(output_token_ids)
   request_latency = (prompt_len, output_len, (request_end_time - request_start_time))
 
   # Exclude first token for tpot calculation
   if output_len > 1:
-    tpot_metric.observe(1000 * (request_end_time - ttft - request_start_time) / (output_len - 1))
-  request_latency_per_output_token_metric.observe(1000 * (request_end_time - request_start_time) / output_len)
+    tpot_metric.observe((request_end_time - ttft - request_start_time) / (output_len - 1))
+  request_latency_per_output_token_metric.observe((request_end_time - request_start_time) / output_len)
   if ttft is not None:
-    ttft_metric.observe(1000 * ttft)
+    ttft_metric.observe(ttft)
   prompt_length_metric.observe(prompt_len)
   response_length_metric.observe(output_len)
   return request_latency, ttft, itl, None
@@ -275,7 +275,7 @@ async def send_request(
     timeout: float,
 ) -> Tuple[Tuple[int, int, float], float, List[float], Dict[str, int]]:
   """Sends request to server."""
-  request_start_time = time.time()
+  request_start_time = 1000 * time.time()
   errors = init_errors_map()
 
   headers = {"User-Agent": "Benchmark Client"}
@@ -381,7 +381,7 @@ async def send_request(
         errors["unknown_error"] += 1
         return None, None, None, errors
 
-  request_end_time = time.time()
+  request_end_time = 1000 * time.time()
   # Naive HF transformers generation and TensorRT-LLM generation stops at EOS
   # tokens and the generation may be shorter than the ground-truth output
   # sequence length.
@@ -823,8 +823,8 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
     **itls_stats,
     # NOTE: The latency below includes requests awaiting time on server side.
     # It's not comparable with the model inference latency for batch size 1.
-    **(get_stats_for_set("latency", "milliseconds/request (includes waiting time on server)" ,[1000 * latency for _, _, latency in request_latencies])),
-    **(get_stats_for_set("per_output_token_latency", "milliseconds/output_token (includes waiting time on server)", [1000 * latency / output_len for _, output_len, latency in request_latencies])),
+    **(get_stats_for_set("latency", "milliseconds/request (includes waiting time on server)" ,[latency for _, _, latency in request_latencies])),
+    **(get_stats_for_set("per_output_token_latency", "milliseconds/output_token (includes waiting time on server)", [latency / output_len for _, output_len, latency in request_latencies])),
     **(get_stats_for_set("input_len", "input length", [float(prompt_len) for prompt_len, _, _ in request_latencies])),
     **(get_stats_for_set("output_len", "output length", [float(output_len) for _, output_len, _ in request_latencies]))
   }
