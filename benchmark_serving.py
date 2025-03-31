@@ -815,7 +815,7 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
 
   benchmark_result = {
     **benchmark_result,
-    **(get_stats_for_set("per_token_latency", "seconds/token (includes waiting time on server)", [
+    **(get_stats_for_set("per_token_latency", "milliseconds/token (includes waiting time on server)", [
       latency / (prompt_len + output_len)
       for prompt_len, output_len, latency in request_latencies
     ])),
