@@ -167,7 +167,7 @@ async def send_stream_request(
     timeout: float,
 ) -> Tuple[Tuple[int, int, float], float, List[float], Dict[str, int]]:
   """Sends stream request to server"""
-  request_start_time = 1000 * time.time()
+  request_start_time_ms = 1000 * time.time()
   errors = init_errors_map()
 
   headers = {"User-Agent": "Benchmark Client"}
@@ -244,15 +244,15 @@ async def send_stream_request(
       print(f"Unknown error {e}")
       errors["unknown_error"] += 1
       return None, None, None, errors
-  request_end_time = 1000 * time.time()
+  request_end_time_ms = 1000 * time.time()
   output_token_ids = tokenizer(output).input_ids
   output_len = len(output_token_ids)
-  request_latency = (prompt_len, output_len, (request_end_time - request_start_time))
+  request_latency = (prompt_len, output_len, (request_end_time_ms - request_start_time_ms))
 
   # Exclude first token for tpot calculation
   if output_len > 1:
-    tpot_metric.observe((request_end_time - ttft - request_start_time) / (output_len - 1))
-  request_latency_per_output_token_metric.observe((request_end_time - request_start_time) / output_len)
+    tpot_metric.observe((request_end_time_ms - ttft - request_start_time_ms) / (output_len - 1))
+  request_latency_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
   if ttft is not None:
     ttft_metric.observe(ttft)
   prompt_length_metric.observe(prompt_len)
@@ -275,7 +275,7 @@ async def send_request(
     timeout: float,
 ) -> Tuple[Tuple[int, int, float], float, List[float], Dict[str, int]]:
   """Sends request to server."""
-  request_start_time = 1000 * time.time()
+  request_start_time_ms = 1000 * time.time()
   errors = init_errors_map()
 
   headers = {"User-Agent": "Benchmark Client"}
@@ -381,7 +381,7 @@ async def send_request(
         errors["unknown_error"] += 1
         return None, None, None, errors
 
-  request_end_time = 1000 * time.time()
+  request_end_time_ms = 1000 * time.time()
   # Naive HF transformers generation and TensorRT-LLM generation stops at EOS
   # tokens and the generation may be shorter than the ground-truth output
   # sequence length.
@@ -408,8 +408,8 @@ async def send_request(
     output_len = len(output_token_ids)
 
   # (prompt len, output len, latency, success)
-  request_latency = (prompt_len, output_len, (request_end_time - request_start_time))
-  request_latency_per_output_token_metric.observe((request_end_time - request_start_time) / output_len)
+  request_latency = (prompt_len, output_len, (request_end_time_ms - request_start_time_ms))
+  request_latency_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
   prompt_length_metric.observe(prompt_len)
   response_length_metric.observe(output_len)
 
@@ -804,9 +804,9 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_re
   itls_stats = {}
   tpot_stats = {}
   if args.stream_request:
-    ttft_stats = get_stats_for_set("TTFT", "Time to First Token (s)", ttfts)
-    itls_stats = get_stats_for_set("ITL", "Inter-Token Latency (s)", itls)
-    tpot_stats = get_stats_for_set("TPOT", "Time Per Output Token (s)", tpots)
+    ttft_stats = get_stats_for_set("TTFT_ms", "Time to First Token (ms)", ttfts)
+    itls_stats = get_stats_for_set("ITL_ms", "Inter-Token Latency (ms)", itls)
+    tpot_stats = get_stats_for_set("TPOT_ms", "Time Per Output Token (ms)", tpots)
   if args.machine_cost:
     print(
         "Cost $/1k tokens:"
