@@ -46,6 +46,7 @@ BASE_PYTHON_OPTS=(
 [[ "$SCRAPE_SERVER_METRICS" = "true" ]] && BASE_PYTHON_OPTS+=("--scrape-server-metrics")
 [[ "$SAVE_AGGREGATED_RESULT" = "true" ]] && BASE_PYTHON_OPTS+=("--save-aggregated-result")
 [[ "$STREAM_REQUEST" = "true" ]] && BASE_PYTHON_OPTS+=("--stream-request")
+[[ "$IGNORE_EOS" = "true" ]] && BASE_PYTHON_OPTS+=("--ignore-eos")
 [[ "$OUTPUT_BUCKET_FILEPATH" ]] && BASE_PYTHON_OPTS+=("--output-bucket-filepath" "$OUTPUT_BUCKET_FILEPATH")
 
 SLEEP_TIME=${SLEEP_TIME:-0}
