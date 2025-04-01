@@ -49,7 +49,7 @@ PROMETHEUS_PORT = 9090
 # Prometheus Metrics
 prompt_length_metric = Histogram("LatencyProfileGenerator:prompt_length", "Input prompt length", buckets=[2**i for i in range(1, 16)])
 response_length_metric = Histogram("LatencyProfileGenerator:response_length", "Response length", buckets=[2**i for i in range(1, 16)])
-request_latency_per_output_token_metric = Histogram('LatencyProfileGenerator:request_latency_per_output_token_ms', 'Time per output token per request (including first token) (ms)', buckets=[2**i for i in range(1, 16)])
+normalized_time_per_output_token_metric = Histogram('LatencyProfileGenerator:normalized_time_per_output_token_ms', 'Request time over total number of tokens (including first token) (ms)', buckets=[2**i for i in range(1, 16)])
 tpot_metric = Histogram('LatencyProfileGenerator:time_per_output_token_ms', 'Time per output token per request (excluding first token) (ms)', buckets=[2**i for i in range(1, 16)])
 ttft_metric = Histogram('LatencyProfileGenerator:time_to_first_token_ms', 'Time to first token per request (ms)', buckets=[2**i for i in range(1, 16)])
 active_requests_metric = Gauge('LatencyProfileGenerator:active_requests', 'How many requests actively being processed')
@@ -252,7 +252,7 @@ async def send_stream_request(
   # Exclude first token for tpot calculation
   if output_len > 1:
     tpot_metric.observe((request_end_time_ms - ttft_ms - request_start_time_ms) / (output_len - 1))
-  request_latency_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
+  normalized_time_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
   if ttft_ms is not None:
     ttft_metric.observe(ttft_ms)
   prompt_length_metric.observe(prompt_len)
@@ -409,7 +409,7 @@ async def send_request(
 
   # (prompt len, output len, latency, success)
   request_latency_ms = (prompt_len, output_len, (request_end_time_ms - request_start_time_ms))
-  request_latency_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
+  normalized_time_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
   prompt_length_metric.observe(prompt_len)
   response_length_metric.observe(output_len)
 
@@ -575,13 +575,13 @@ def save_json_results(args: argparse.Namespace, benchmark_result, server_metrics
           "p99": benchmark_result["p99_output_len"],
         },
         "tpot": {
-          "mean": benchmark_result["avg_per_output_token_latency_ms"],
-          "median": benchmark_result["median_per_output_token_latency_ms"],
-          "sd": benchmark_result["sd_per_output_token_latency_ms"],
-          "min": benchmark_result["min_per_output_token_latency_ms"],
-          "max": benchmark_result["max_per_output_token_latency_ms"],
-          "p90": benchmark_result["p90_per_output_token_latency_ms"],
-          "p99": benchmark_result["p99_per_output_token_latency_ms"],
+          "mean": benchmark_result["avg_normalized_time_per_output_token_ms"],
+          "median": benchmark_result["median_normalized_time_per_output_token_ms"],
+          "sd": benchmark_result["sd_normalized_time_per_output_token_ms"],
+          "min": benchmark_result["min_normalized_time_per_output_token_ms"],
+          "max": benchmark_result["max_normalized_time_per_output_token_ms"],
+          "p90": benchmark_result["p90_normalized_time_per_output_token_ms"],
+          "p99": benchmark_result["p99_normalized_time_per_output_token_ms"],
         },
         "model_server_metrics" : [{"Name": name, **metrics} for name, metrics in server_metrics.items()]
       }]
@@ -824,7 +824,7 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration_sec, tota
     # NOTE: The latency below includes requests awaiting time on server side.
     # It's not comparable with the model inference latency for batch size 1.
     **(get_stats_for_set("latency_ms", "milliseconds/request (includes waiting time on server)" ,[latency for _, _, latency in request_latencies])),
-    **(get_stats_for_set("per_output_token_latency_ms", "milliseconds/output_token (includes waiting time on server)", [latency / output_len for _, output_len, latency in request_latencies])),
+    **(get_stats_for_set("normalized_time_per_output_token_ms", "milliseconds/output_token (includes waiting time on server)", [latency / output_len for _, output_len, latency in request_latencies])),
     **(get_stats_for_set("input_len", "input length", [float(prompt_len) for prompt_len, _, _ in request_latencies])),
     **(get_stats_for_set("output_len", "output length", [float(output_len) for _, output_len, _ in request_latencies]))
   }
