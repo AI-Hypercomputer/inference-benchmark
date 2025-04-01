@@ -55,10 +55,36 @@ ttft_metric = Histogram('LatencyProfileGenerator:time_to_first_token_ms', 'Time 
 active_requests_metric = Gauge('LatencyProfileGenerator:active_requests', 'How many requests actively being processed')
 total_request_count = Counter('LatencyProfileGenerator:request_count', 'How many total requests have been sent')
 
+# Singleton class to track requests for QPS counting and calculation.
+class AsyncRequestCounter:
+  _instance = None
+  _lock = asyncio.Lock()
+
+  async def __new__(cls, target_requests=None, *args, **kwargs):
+    async with cls._lock:
+      if not cls._instance:
+        cls._instance = super().__new__(cls)
+        cls._instance._count = 0
+        cls._instance._start_time = time.time()
+        cls._instance._target_requests = target_requests
+    return cls._instance
+  
+  async def increment(self):
+    async with self._lock:
+      self._count += 1
+      if self._count == self._target_requests:
+        self._end_time = time.time()
+  
+  async def get_qps(self):
+    return self._count / (self._end_time - self._start_time)
+
+
 # Add trace config for monitoring in flight requests
 async def on_request_start(session, trace_config_ctx, params):
     active_requests_metric.inc()
     total_request_count.inc()
+    counter = await AsyncRequestCounter()
+    await counter.increment()
 
 async def on_request_end(session, trace_config_ctx, params):
     active_requests_metric.dec()
@@ -462,6 +488,8 @@ async def benchmark(
     model_weights = list(models_dict.values())
 
     benchmark_start_time_sec = time.time()
+    # Initialize the counter with target prompts
+    await AsyncRequestCounter(args.num_prompts)
     tasks: List[asyncio.Task] = []
     prompts_sent = 0
     async for request in generate_next_request(input_requests, args.request_rate):
@@ -503,12 +531,12 @@ async def benchmark(
 
     benchmark_duration_sec = time.time() - benchmark_start_time_sec
     
-    print_and_save_result(args, benchmark_duration_sec, prompts_sent, "weighted",
+    await print_and_save_result(args, benchmark_duration_sec, prompts_sent, "weighted",
                           overall_results["latencies"], overall_results["ttfts"],
                           overall_results["itls"], overall_results["tpots"],
                           overall_results["errors"])
     for model, data in per_model_results.items():
-        print_and_save_result(args, benchmark_duration_sec, len(data["latencies"]), model,
+        await print_and_save_result(args, benchmark_duration_sec, len(data["latencies"]), model,
                               data["latencies"], data["ttfts"], data["itls"],
                               data["tpots"], data["errors"])
 
@@ -524,6 +552,7 @@ def save_json_results(args: argparse.Namespace, benchmark_result, server_metrics
       "num_prompts_attempted": benchmark_result['num_prompts_attempted'],
       "num_prompts_succeeded": benchmark_result['num_prompts_succeeded'],
       "request_rate": args.request_rate,
+      "queries_per_second": benchmark_result['queries_per_second'],
       'server_metrics': {
         **server_metrics
       },
@@ -762,15 +791,6 @@ def print_metrics(metrics: List[str], duration_sec: float, namespace: str, job: 
         logger.debug("HTTP Error: %s" % (response))
         continue
     server_metrics[metric] = metric_results
-
-
-  url='https://monitoring.googleapis.com/v1/projects/%s/location/global/prometheus/api/v1/query' % (project_id)
-  headers_api = {'Authorization': 'Bearer ' + credentials.token}
-  params = {'query': f'rate(LatencyProfileGenerator:request_count_total[{duration}s])'}
-  logger.debug(f"Finding {query_name} {metric} with the following query: {query}")
-  request_post = requests.get(url=url, headers=headers_api, params=params)
-  response = request_post.json()
-  print(f"Got response for benchmarking prom metrics: {response}")
   
   return server_metrics
 
@@ -795,7 +815,7 @@ def get_stats_for_set(name, description, points):
     f'p99_{name}': p99,
   }
 
-def print_and_save_result(args: argparse.Namespace, benchmark_duration_sec, total_requests, model, request_latencies, ttfts, itls, tpots, errors):
+async def print_and_save_result(args: argparse.Namespace, benchmark_duration_sec, total_requests, model, request_latencies, ttfts, itls, tpots, errors):
   benchmark_result = {}
 
   print(f"====Result for Model: {model}====")
@@ -803,6 +823,10 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration_sec, tota
   print(f"Total time (seconds): {benchmark_duration_sec:.2f} s")
   print(f"Successful/total requests: {len(request_latencies)}/{total_requests}")
   print(f"Requests/sec: {total_requests / benchmark_duration_sec:.2f}")
+  counter = await AsyncRequestCounter()
+  queries_per_second = await counter.get_qps()
+  print(f"Queries/sec: {queries_per_second:.2f}")
+  benchmark_result['queries_per_second'] = queries_per_second
   benchmark_result["num_prompts_attempted"] = total_requests
   benchmark_result["num_prompts_succeeded"] = len(request_latencies)
   benchmark_result['benchmark_time'] = benchmark_duration_sec
