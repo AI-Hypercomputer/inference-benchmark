@@ -49,9 +49,9 @@ PROMETHEUS_PORT = 9090
 # Prometheus Metrics
 prompt_length_metric = Histogram("LatencyProfileGenerator:prompt_length", "Input prompt length", buckets=[2**i for i in range(1, 16)])
 response_length_metric = Histogram("LatencyProfileGenerator:response_length", "Response length", buckets=[2**i for i in range(1, 16)])
-request_latency_per_output_token_metric = Histogram('LatencyProfileGenerator:request_latency_per_output_token', 'Time per output token per request (including first token)')
-tpot_metric = Histogram('LatencyProfileGenerator:time_per_output_token', 'Time per output token per request (excluding first token)')
-ttft_metric = Histogram('LatencyProfileGenerator:time_to_first_token', 'Time to first token per request')
+normalized_time_per_output_token_metric = Histogram('LatencyProfileGenerator:normalized_time_per_output_token_ms', 'Request time over total number of tokens (including first token) (ms)', buckets=[2**i for i in range(1, 16)])
+tpot_metric = Histogram('LatencyProfileGenerator:time_per_output_token_ms', 'Time per output token per request (excluding first token) (ms)', buckets=[2**i for i in range(1, 16)])
+ttft_metric = Histogram('LatencyProfileGenerator:time_to_first_token_ms', 'Time to first token per request (ms)', buckets=[2**i for i in range(1, 16)])
 active_requests_metric = Gauge('LatencyProfileGenerator:active_requests', 'How many requests actively being processed')
 
 # Add trace config for monitoring in flight requests
@@ -167,7 +167,7 @@ async def send_stream_request(
     timeout: float,
 ) -> Tuple[Tuple[int, int, float], float, List[float], Dict[str, int]]:
   """Sends stream request to server"""
-  request_start_time = time.time()
+  request_start_time_ms = 1000 * time.time()
   errors = init_errors_map()
 
   headers = {"User-Agent": "Benchmark Client"}
@@ -193,10 +193,10 @@ async def send_stream_request(
   else: 
     raise ValueError(f"Unknown backend: {backend}")
 
-  ttft = 0.0
-  itl = []
-  st = time.perf_counter()
-  most_recent_timestamp = st
+  ttft_ms = 0.0
+  itl_ms = []
+  start_time_ms = 1000 * time.perf_counter()
+  most_recent_timestamp = start_time_ms
   output = ""
   timeout = aiohttp.ClientTimeout(total=timeout)
   async with aiohttp.ClientSession(timeout=timeout,trust_env=True) as session:
@@ -206,13 +206,13 @@ async def send_stream_request(
           chunk_bytes = chunk_bytes[0].strip()
           if not chunk_bytes:
               continue
-          timestamp = time.perf_counter()
+          timestamp_ms = 1000 * time.perf_counter()
           # First token
-          if ttft == 0.0:
-            ttft = timestamp - st
+          if ttft_ms == 0.0:
+            ttft_ms = timestamp_ms - start_time_ms
           else:
-            itl.append(timestamp - most_recent_timestamp)
-          most_recent_timestamp = timestamp
+            itl_ms.append(timestamp_ms - most_recent_timestamp)
+          most_recent_timestamp = timestamp_ms
           if backend == "vllm":
             if chunk_bytes.decode("utf-8")[6:] != "[DONE]":
               output += json.loads(chunk_bytes.decode("utf-8")[6:])["choices"][0]["text"]
@@ -244,20 +244,20 @@ async def send_stream_request(
       print(f"Unknown error {e}")
       errors["unknown_error"] += 1
       return None, None, None, errors
-  request_end_time = time.time()
+  request_end_time_ms = 1000 * time.time()
   output_token_ids = tokenizer(output).input_ids
   output_len = len(output_token_ids)
-  request_latency = (prompt_len, output_len, (request_end_time - request_start_time))
+  request_latency_ms = (prompt_len, output_len, (request_end_time_ms - request_start_time_ms))
 
   # Exclude first token for tpot calculation
   if output_len > 1:
-    tpot_metric.observe((request_end_time - ttft - request_start_time) / (output_len - 1))
-  request_latency_per_output_token_metric.observe((request_end_time - request_start_time) / output_len)
-  if ttft is not None:
-    ttft_metric.observe(ttft)
+    tpot_metric.observe((request_end_time_ms - ttft_ms - request_start_time_ms) / (output_len - 1))
+  normalized_time_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
+  if ttft_ms is not None:
+    ttft_metric.observe(ttft_ms)
   prompt_length_metric.observe(prompt_len)
   response_length_metric.observe(output_len)
-  return request_latency, ttft, itl, None
+  return request_latency_ms, ttft_ms, itl_ms, None
 
 async def send_request(
     backend: str,
@@ -275,7 +275,7 @@ async def send_request(
     timeout: float,
 ) -> Tuple[Tuple[int, int, float], float, List[float], Dict[str, int]]:
   """Sends request to server."""
-  request_start_time = time.time()
+  request_start_time_ms = 1000 * time.time()
   errors = init_errors_map()
 
   headers = {"User-Agent": "Benchmark Client"}
@@ -381,7 +381,7 @@ async def send_request(
         errors["unknown_error"] += 1
         return None, None, None, errors
 
-  request_end_time = time.time()
+  request_end_time_ms = 1000 * time.time()
   # Naive HF transformers generation and TensorRT-LLM generation stops at EOS
   # tokens and the generation may be shorter than the ground-truth output
   # sequence length.
@@ -408,12 +408,12 @@ async def send_request(
     output_len = len(output_token_ids)
 
   # (prompt len, output len, latency, success)
-  request_latency = (prompt_len, output_len, (request_end_time - request_start_time))
-  request_latency_per_output_token_metric.observe((request_end_time - request_start_time) / output_len)
+  request_latency_ms = (prompt_len, output_len, (request_end_time_ms - request_start_time_ms))
+  normalized_time_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
   prompt_length_metric.observe(prompt_len)
   response_length_metric.observe(output_len)
 
-  return request_latency, None, None, None
+  return request_latency_ms, None, None, None
 
 
 async def run_single_request(args: argparse.Namespace, api_url: str, tokenizer: PreTrainedTokenizerBase,
@@ -455,7 +455,7 @@ async def benchmark(
     model_names = list(models_dict.keys())
     model_weights = list(models_dict.values())
 
-    benchmark_start_time = time.time()
+    benchmark_start_time_sec = time.time()
     tasks: List[asyncio.Task] = []
     prompts_sent = 0
     async for request in generate_next_request(input_requests, args.request_rate):
@@ -477,32 +477,32 @@ async def benchmark(
     for chosen_model, res in results:
         if res is None:
             continue
-        latency, ttft, itl, errors = res
+        latency, ttft_ms, itl_ms, errors = res
         if errors:
           for k, v in errors.items():
               overall_results["errors"][k] += v
               per_model_results[chosen_model]["errors"][k] += v
         else:
-          prompt_len, output_len, request_latency = latency
+          prompt_len, output_len, request_latency_ms = latency
           overall_results["latencies"].append(latency)
           per_model_results[chosen_model]["latencies"].append(latency)
-          if ttft:
-              overall_results["ttfts"].append(ttft)
-              overall_results["tpots"].append((request_latency - ttft) / (output_len - 1) if output_len > 1 else 0)
-              per_model_results[chosen_model]["ttfts"].append(ttft)
-              per_model_results[chosen_model]["tpots"].append((request_latency - ttft) / (output_len - 1) if output_len > 1 else 0)
-          if itl:
-              overall_results["itls"].extend(itl)     
-              per_model_results[chosen_model]["itls"].extend(itl)     
+          if ttft_ms:
+              overall_results["ttfts"].append(ttft_ms)
+              overall_results["tpots"].append((request_latency_ms - ttft_ms) / (output_len - 1) if output_len > 1 else 0)
+              per_model_results[chosen_model]["ttfts"].append(ttft_ms)
+              per_model_results[chosen_model]["tpots"].append((request_latency_ms - ttft_ms) / (output_len - 1) if output_len > 1 else 0)
+          if itl_ms:
+              overall_results["itls"].extend(itl_ms)     
+              per_model_results[chosen_model]["itls"].extend(itl_ms)     
 
-    benchmark_duration = time.time() - benchmark_start_time
+    benchmark_duration_sec = time.time() - benchmark_start_time_sec
     
-    print_and_save_result(args, benchmark_duration, prompts_sent, "weighted",
+    print_and_save_result(args, benchmark_duration_sec, prompts_sent, "weighted",
                           overall_results["latencies"], overall_results["ttfts"],
                           overall_results["itls"], overall_results["tpots"],
                           overall_results["errors"])
     for model, data in per_model_results.items():
-        print_and_save_result(args, benchmark_duration, len(data["latencies"]), model,
+        print_and_save_result(args, benchmark_duration_sec, len(data["latencies"]), model,
                               data["latencies"], data["ttfts"], data["itls"],
                               data["tpots"], data["errors"])
 
@@ -620,7 +620,7 @@ def metrics_to_scrape(backend: str) -> List[str]:
   else:
     return []
 
-def print_metrics(metrics: List[str], duration: float, namespace: str, job: str):
+def print_metrics(metrics: List[str], duration_sec: float, namespace: str, job: str):
   # Creates a credentials object from the default service account file
   # Assumes that script has appropriate default credentials set up, ref:
   # https://googleapis.dev/python/google-auth/latest/user-guide.html#application-default-credentials
@@ -656,34 +656,34 @@ def print_metrics(metrics: List[str], duration: float, namespace: str, job: str)
     # podmonitoring spec assumed to be named "$BACKEND-podmonitoring"
     queries = {
       "gauge": {
-        "Mean": "avg_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
-        "Median": "quantile_over_time(0.5, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
-        "Sd": "stddev_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
-        "Min": "min_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
-        "Max": "max_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
-        "P90": "quantile_over_time(0.9, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
-        "P95": "quantile_over_time(0.95, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
-        "P99": "quantile_over_time(0.99, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
+        "Mean": "avg_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
+        "Median": "quantile_over_time(0.5, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
+        "Sd": "stddev_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
+        "Min": "min_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
+        "Max": "max_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
+        "P90": "quantile_over_time(0.9, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
+        "P95": "quantile_over_time(0.95, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
+        "P99": "quantile_over_time(0.99, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
       },
       "histogram": {
-        "Mean": "sum(rate(%s_sum{job='%s',namespace='%s'}[%.0fs])) / sum(rate(%s_count{job='%s',namespace='%s'}[%.0fs]))" % (metric, job, namespace, duration, metric, job, namespace, duration),
-        "Median": "histogram_quantile(0.5, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
-        "Min": "histogram_quantile(0, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
-        "Max": "histogram_quantile(1, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
-        "P90": "histogram_quantile(0.9, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
-        "P95": "histogram_quantile(0.95, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
-        "P99": "histogram_quantile(0.99, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration),
+        "Mean": "sum(rate(%s_sum{job='%s',namespace='%s'}[%.0fs])) / sum(rate(%s_count{job='%s',namespace='%s'}[%.0fs]))" % (metric, job, namespace, duration_sec, metric, job, namespace, duration_sec),
+        "Median": "histogram_quantile(0.5, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
+        "Min": "histogram_quantile(0, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
+        "Max": "histogram_quantile(1, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
+        "P90": "histogram_quantile(0.9, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
+        "P95": "histogram_quantile(0.95, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
+        "P99": "histogram_quantile(0.99, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
       },
       "counter": {
-        "Sum": "sum_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
-        "Rate": "rate(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
-        "Increase": "increase(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration),
-        "Mean": "avg_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
-        "Max": "max_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
-        "Min": "min_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
-        "P90": "quantile_over_time(0.9, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
-        "P95": "quantile_over_time(0.5, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
-        "P99": "quantile_over_time(0.99, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration, duration, duration),
+        "Sum": "sum_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
+        "Rate": "rate(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
+        "Increase": "increase(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
+        "Mean": "avg_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
+        "Max": "max_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
+        "Min": "min_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
+        "P90": "quantile_over_time(0.9, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
+        "P95": "quantile_over_time(0.5, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
+        "P99": "quantile_over_time(0.99, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
       },
   }
     for query_name, query in queries[metric_type].items():
@@ -733,50 +733,48 @@ def get_stats_for_set(description, points):
     f'p99': np.percentile(points, 99) if points else 0,
   }
 
-def print_and_save_result(args: argparse.Namespace, benchmark_duration, total_requests, model, request_latencies, ttfts, itls, tpots, errors):
+def print_and_save_result(args: argparse.Namespace, benchmark_duration_sec, total_requests, model, request_latencies, ttfts, itls, tpots, errors):
   benchmark_result = {}
 
   print(f"====Result for Model: {model}====")
   print(f"Errors: {errors}")
-  print(f"Total time: {benchmark_duration:.2f} s")
+  print(f"Total time (seconds): {benchmark_duration_sec:.2f} s")
   print(f"Successful/total requests: {len(request_latencies)}/{total_requests}")
-  print(f"Requests/min: {60 * total_requests / benchmark_duration:.2f}")
+  print(f"Requests/sec: {total_requests / benchmark_duration_sec:.2f}")
   benchmark_result["num_prompts_attempted"] = total_requests
   benchmark_result["num_prompts_succeeded"] = len(request_latencies)
-  benchmark_result['benchmark_time'] = benchmark_duration
-  benchmark_result['throughput_rps'] = (args.num_prompts / benchmark_duration)
+  benchmark_result['benchmark_time'] = benchmark_duration_sec
+  benchmark_result['throughput_rps'] = (args.num_prompts / benchmark_duration_sec)
 
   total_output_tokens = np.sum([output_len for _, output_len, _ in
                                 request_latencies])
-  output_tokens_per_second = total_output_tokens / benchmark_duration
+  output_tokens_per_second = total_output_tokens / benchmark_duration_sec
   benchmark_result['throughput'] = output_tokens_per_second
 
-  output_tokens_per_min = 60 * output_tokens_per_second
-  print(f"Output_tokens/min: {output_tokens_per_min:.2f}")
+  print(f"Output_tokens/sec: {output_tokens_per_second:.2f}")
   benchmark_result['total_output_token'] = int(total_output_tokens)
-  benchmark_result['output_tokens_per_min'] = output_tokens_per_min
 
   total_input_tokens = np.sum([prompt_len for prompt_len, _, _ in
                                request_latencies])
-  input_tokens_per_min = 60 * total_input_tokens / benchmark_duration
-  print(f"Input_tokens/min: {input_tokens_per_min:.2f}")
+  input_tokens_per_sec = total_input_tokens / benchmark_duration_sec
+  print(f"Input_tokens/sec: {input_tokens_per_sec:.2f}")
   benchmark_result['total_input_tokens'] = int(total_input_tokens)
-  benchmark_result['input_tokens_per_min'] = input_tokens_per_min
+  benchmark_result['input_tokens_per_sec'] = input_tokens_per_sec
 
   total_tokens = total_input_tokens + total_output_tokens
-  tokens_per_min = 60 * total_tokens / benchmark_duration
-  print(f"Tokens/min: {tokens_per_min:.2f}")
+  tokens_per_sec = total_tokens / benchmark_duration_sec
+  print(f"Tokens/sec: {tokens_per_sec:.2f}")
   benchmark_result['total_tokens'] = int(total_tokens)
   benchmark_result['tokens_per_min'] = tokens_per_min
   if args.machine_cost:
     print(
         "Cost $/1k tokens:"
-        f" {args.machine_cost * 1000 / (60 * output_tokens_per_min)}"
+        f" {args.machine_cost * 1000 / output_tokens_per_second}"
     )
 
   server_metrics = {}
   if args.scrape_server_metrics:
-    server_metrics = print_metrics(metrics_to_scrape(args.backend), benchmark_duration, args.pm_namespace, args.pm_job)
+    server_metrics = print_metrics(metrics_to_scrape(args.backend), benchmark_duration_sec, args.pm_namespace, args.pm_job)
   if args.save_json_results:
     save_json_results(args, benchmark_result, request_latencies, ttfts, itls, server_metrics, model, errors)
 
