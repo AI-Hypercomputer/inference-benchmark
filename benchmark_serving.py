@@ -720,11 +720,11 @@ def print_metrics(metrics: List[str], duration_sec: float, namespace: str, job: 
   return server_metrics
 
 def get_stats_for_set(description, points):
-  avg = np.mean(points) if points else 0
-  print(f"Average {description}:" f" {avg:.2f}")
+  mean = np.mean(points) if points else 0
+  print(f"Average {description}:" f" {mean:.2f}")
 
   return {
-    'avg':  avg,
+    'mean':  mean,
     'median': np.median(points) if points else 0,
     'sd': np.std(points) if points else 0,
     'min': np.min(points) if points else 0,
