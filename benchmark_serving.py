@@ -769,7 +769,7 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration_sec, tota
   if args.machine_cost:
     print(
         "Cost $/1k tokens:"
-        f" {args.machine_cost * 1000 / output_tokens_per_second}"
+        f" {args.machine_cost * 1000 / (60 * output_tokens_per_min)}"
     )
 
   server_metrics = {}
