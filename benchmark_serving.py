@@ -506,7 +506,7 @@ async def benchmark(
                               data["latencies"], data["ttfts"], data["itls"],
                               data["tpots"], data["errors"])
 
-def save_json_results(args: argparse.Namespace, benchmark_result, server_metrics, model, errors):
+def save_json_results(args: argparse.Namespace, benchmark_result, request_latencies, ttfts, itls, server_metrics, model, errors):
   # Setup
   start_dt_proto = Timestamp()
   start_dt_proto.FromDatetime(args.start_datetime)
@@ -544,45 +544,18 @@ def save_json_results(args: argparse.Namespace, benchmark_result, server_metrics
     "summary_stats": {
       "stats": [{
         "request_rate": args.request_rate,
-        "request_latency": {
-          "mean": benchmark_result["avg_latency_ms"],
-          "median": benchmark_result["median_latency_ms"],
-          "sd": benchmark_result["sd_latency_ms"],
-          "min": benchmark_result["min_latency_ms"],
-          "max": benchmark_result["max_latency_ms"],
-          "p90": benchmark_result["p90_latency_ms"],
-          "p99": benchmark_result["p99_latency_ms"],
-        },
+        "request_latency": get_stats_for_set("milliseconds/request (includes waiting time on server)" ,[1000 * latency for _, _, latency in request_latencies]),
         "throughput": {
           "mean": benchmark_result['throughput']
         },
-        "input_length": {
-          "mean": benchmark_result["avg_input_len"],
-          "median": benchmark_result["median_input_len"],
-          "sd": benchmark_result["sd_input_len"],
-          "min": benchmark_result["min_input_len"],
-          "max": benchmark_result["max_input_len"],
-          "p90": benchmark_result["p90_input_len"],
-          "p99": benchmark_result["p99_input_len"],
-        },
-        "output_length": {
-          "mean": benchmark_result["avg_output_len"],
-          "median": benchmark_result["median_output_len"],
-          "sd": benchmark_result["sd_output_len"],
-          "min": benchmark_result["min_output_len"],
-          "max": benchmark_result["max_output_len"],
-          "p90": benchmark_result["p90_output_len"],
-          "p99": benchmark_result["p99_output_len"],
-        },
-        "tpot": {
-          "mean": benchmark_result["avg_normalized_time_per_output_token_ms"],
-          "median": benchmark_result["median_normalized_time_per_output_token_ms"],
-          "sd": benchmark_result["sd_normalized_time_per_output_token_ms"],
-          "min": benchmark_result["min_normalized_time_per_output_token_ms"],
-          "max": benchmark_result["max_normalized_time_per_output_token_ms"],
-          "p90": benchmark_result["p90_normalized_time_per_output_token_ms"],
-          "p99": benchmark_result["p99_normalized_time_per_output_token_ms"],
-        },
+        "input_length": get_stats_for_set("input length", [float(prompt_len) for prompt_len, _, _ in request_latencies]),
+        "output_length": get_stats_for_set("output length", [float(output_len) for _, output_len, _ in request_latencies]),
+        "ttft": get_stats_for_set("Time to First Token (s)", ttfts) if args.stream_request else {},
+        # NOTE: The latency below includes requests awaiting time on server side.
+        # It's not comparable with the model inference latency for batch size 1.
+        "inter_token_latency": get_stats_for_set("Inter-Token Latency (s)", itls) if args.stream_request else {},
+        "tpot": get_stats_for_set("milliseconds/output_token (includes waiting time on server)", [1000 * latency / output_len for _, output_len, latency in request_latencies]),
+        "per_token_latencies": get_stats_for_set("seconds/token (includes waiting time on server)", [latency / (prompt_len + output_len) for prompt_len, output_len, latency in request_latencies]),
         "model_server_metrics" : [{"Name": name, **metrics} for name, metrics in server_metrics.items()]
       }]
     }
@@ -746,25 +719,18 @@ def print_metrics(metrics: List[str], duration_sec: float, namespace: str, job: 
     server_metrics[metric] = metric_results
   return server_metrics
 
-def get_stats_for_set(name, description, points):
+def get_stats_for_set(description, points):
   avg = np.mean(points) if points else 0
-  median = np.median(points) if points else 0
-  sd = np.std(points) if points else 0
-  min = np.min(points) if points else 0
-  max = np.max(points) if points else 0
-  p90 = np.percentile(points, 90) if points else 0
-  p99 = np.percentile(points, 99) if points else 0
-
   print(f"Average {description}:" f" {avg:.2f}")
 
   return {
-    f'avg_{name}':  avg,
-    f'median_{name}': median,
-    f'sd_{name}': sd,
-    f'min_{name}': min,
-    f'max_{name}': max,
-    f'p90_{name}': p90,
-    f'p99_{name}': p99,
+    f'avg':  avg,
+    f'median': np.median(points) if points else 0,
+    f'sd': np.std(points) if points else 0,
+    f'min': np.min(points) if points else 0,
+    f'max': np.max(points) if points else 0,
+    f'p90': np.percentile(points, 90) if points else 0,
+    f'p99': np.percentile(points, 99) if points else 0,
   }
 
 def print_and_save_result(args: argparse.Namespace, benchmark_duration_sec, total_requests, model, request_latencies, ttfts, itls, tpots, errors):
@@ -799,41 +765,18 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration_sec, tota
   tokens_per_sec = total_tokens / benchmark_duration_sec
   print(f"Tokens/sec: {tokens_per_sec:.2f}")
   benchmark_result['total_tokens'] = int(total_tokens)
-  benchmark_result['tokens_per_sec'] = tokens_per_sec
-  ttft_stats = {}
-  itls_stats = {}
-  tpot_stats = {}
-  if args.stream_request:
-    ttft_stats = get_stats_for_set("TTFT_ms", "Time to First Token (ms)", ttfts)
-    itls_stats = get_stats_for_set("ITL_ms", "Inter-Token Latency (ms)", itls)
-    tpot_stats = get_stats_for_set("TPOT_ms", "Time Per Output Token (ms)", tpots)
+  benchmark_result['tokens_per_min'] = tokens_per_min
   if args.machine_cost:
     print(
         "Cost $/1k tokens:"
-        f" {args.machine_cost * 1000 / output_tokens_per_second}"
+        f" {args.machine_cost * 1000 / (60 * output_tokens_per_min)}"
     )
-
-  benchmark_result = {
-    **benchmark_result,
-    **(get_stats_for_set("per_token_latency_ms", "milliseconds/token (includes waiting time on server)", [
-      latency / (prompt_len + output_len)
-      for prompt_len, output_len, latency in request_latencies
-    ])),
-    **ttft_stats,
-    **itls_stats,
-    # NOTE: The latency below includes requests awaiting time on server side.
-    # It's not comparable with the model inference latency for batch size 1.
-    **(get_stats_for_set("latency_ms", "milliseconds/request (includes waiting time on server)" ,[latency for _, _, latency in request_latencies])),
-    **(get_stats_for_set("normalized_time_per_output_token_ms", "milliseconds/output_token (includes waiting time on server)", [latency / output_len for _, output_len, latency in request_latencies])),
-    **(get_stats_for_set("input_len", "input length", [float(prompt_len) for prompt_len, _, _ in request_latencies])),
-    **(get_stats_for_set("output_len", "output length", [float(output_len) for _, output_len, _ in request_latencies]))
-  }
 
   server_metrics = {}
   if args.scrape_server_metrics:
     server_metrics = print_metrics(metrics_to_scrape(args.backend), benchmark_duration_sec, args.pm_namespace, args.pm_job)
   if args.save_json_results:
-    save_json_results(args, benchmark_result, server_metrics, model, errors)
+    save_json_results(args, benchmark_result, request_latencies, ttfts, itls, server_metrics, model, errors)
 
 async def main(args: argparse.Namespace):
   print(args)
