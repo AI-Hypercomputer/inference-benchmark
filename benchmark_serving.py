@@ -550,10 +550,10 @@ def save_json_results(args: argparse.Namespace, benchmark_result, request_latenc
         },
         "input_length": get_stats_for_set("input length", [float(prompt_len) for prompt_len, _, _ in request_latencies]),
         "output_length": get_stats_for_set("output length", [float(output_len) for _, output_len, _ in request_latencies]),
-        "ttft": get_stats_for_set("Time to First Token (s)", ttfts) if args.stream_request else {},
+        "ttft": get_stats_for_set("Time to First Token (ms)", ttfts) if args.stream_request else {},
         # NOTE: The latency below includes requests awaiting time on server side.
         # It's not comparable with the model inference latency for batch size 1.
-        "inter_token_latency": get_stats_for_set("Inter-Token Latency (s)", itls) if args.stream_request else {},
+        "inter_token_latency": get_stats_for_set("Inter-Token Latency (ms)", itls) if args.stream_request else {},
         "tpot": get_stats_for_set("milliseconds/output_token (includes waiting time on server)", [1000 * latency / output_len for _, output_len, latency in request_latencies]),
         "per_token_latencies": get_stats_for_set("seconds/token (includes waiting time on server)", [latency / (prompt_len + output_len) for prompt_len, output_len, latency in request_latencies]),
         "model_server_metrics" : [{"Name": name, **metrics} for name, metrics in server_metrics.items()]
