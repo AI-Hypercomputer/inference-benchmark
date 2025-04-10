@@ -724,13 +724,13 @@ def get_stats_for_set(description, points):
   print(f"Average {description}:" f" {avg:.2f}")
 
   return {
-    f'avg':  avg,
-    f'median': np.median(points) if points else 0,
-    f'sd': np.std(points) if points else 0,
-    f'min': np.min(points) if points else 0,
-    f'max': np.max(points) if points else 0,
-    f'p90': np.percentile(points, 90) if points else 0,
-    f'p99': np.percentile(points, 99) if points else 0,
+    'avg':  avg,
+    'median': np.median(points) if points else 0,
+    'sd': np.std(points) if points else 0,
+    'min': np.min(points) if points else 0,
+    'max': np.max(points) if points else 0,
+    'p90': np.percentile(points, 90) if points else 0,
+    'p99': np.percentile(points, 99) if points else 0,
   }
 
 def print_and_save_result(args: argparse.Namespace, benchmark_duration_sec, total_requests, model, request_latencies, ttfts, itls, tpots, errors):
@@ -765,11 +765,11 @@ def print_and_save_result(args: argparse.Namespace, benchmark_duration_sec, tota
   tokens_per_sec = total_tokens / benchmark_duration_sec
   print(f"Tokens/sec: {tokens_per_sec:.2f}")
   benchmark_result['total_tokens'] = int(total_tokens)
-  benchmark_result['tokens_per_min'] = tokens_per_min
+  benchmark_result['tokens_per_sec'] = tokens_per_sec
   if args.machine_cost:
     print(
         "Cost $/1k tokens:"
-        f" {args.machine_cost * 1000 / (60 * output_tokens_per_min)}"
+        f" {args.machine_cost * 1000 / output_tokens_per_second}"
     )
 
   server_metrics = {}
