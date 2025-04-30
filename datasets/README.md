@@ -25,7 +25,7 @@ This script loads several Hugging Face datasets, extracts “prompt → response
 
 ## Usage
 ```
-python analyze_tokens.py \
+python import_dataset.py \
   --count_tokens \
   --tokenizer TOKENIZER \
   --hf_token YOUR_TOKEN
@@ -40,12 +40,12 @@ python analyze_tokens.py \
 * Generate conversation JSON only
 
 ```
-python analyze_tokens.py --hf_token YOUR_TOKEN
+python import_dataset.py --hf_token YOUR_TOKEN
 ```
 
 * Also compute token stats with a tokenizer
 ```
-python analyze_tokens.py \
+python import_dataset.py \
   --count_tokens \
   --tokenizer TOKENIZER \
   --hf_token YOUR_TOKEN

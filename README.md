@@ -29,6 +29,7 @@ wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/r
 5. For [Inifinity-Instruct](https://huggingface.co/datasets/BAAI/Infinity-Instruct) and [billsum](https://huggingface.co/datasets/FiscalNote/billsum) datasets run
 
 ```
+pip install datasets transformers numpy pandas tqdm matplotlib
 python datasets/import_dataset.py --hf_token YOUR_TOKEN
 ```
 
@@ -62,6 +63,7 @@ gcloud artifacts repositories create ai-benchmark --location=us-central1 --repos
 3. For Inifinity-Instruct and billsum datasets run
 
 ```
+pip install datasets transformers numpy pandas tqdm matplotlib
 python datasets/import_dataset.py --hf_token YOUR_TOKEN
 ```
 
