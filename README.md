@@ -47,24 +47,25 @@ python3 benchmark_serving.py --save-json-results --host=$IP  --port=$PORT --data
 ```
 
 ## Run on a Kubernetes cluster
-1. You can build a container to run the benchmark directly on a Kubernetes cluster
-using the specified Dockerfile.
 
-```
-docker build -t inference-benchmark .
-```
-
-2. Create a repository in artifact registry to push the image there and use it on your cluster.
+1. Create a repository in artifact registry to push the image there and use it on your cluster.
 
 ```
 gcloud artifacts repositories create ai-benchmark --location=us-central1 --repository-format=docker
 ```
 
-3. For Inifinity-Instruct and billsum datasets run
+2. For Inifinity-Instruct and billsum datasets run
 
 ```
 pip install datasets transformers numpy pandas tqdm matplotlib
 python datasets/import_dataset.py --hf_token YOUR_TOKEN
+```
+
+3. You can build a container to run the benchmark directly on a Kubernetes cluster
+using the specified Dockerfile.
+
+```
+docker build -t inference-benchmark .
 ```
 
 4. Push the image to that repository.
