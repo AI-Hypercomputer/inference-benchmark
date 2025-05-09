@@ -252,7 +252,8 @@ async def send_stream_request(
   # Exclude first token for tpot calculation
   if output_len > 1:
     tpot_metric.observe((request_end_time_ms - ttft_ms - request_start_time_ms) / (output_len - 1))
-  normalized_time_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
+  if output_len > 0
+    normalized_time_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
   if ttft_ms is not None:
     ttft_metric.observe(ttft_ms)
   prompt_length_metric.observe(prompt_len)
@@ -409,7 +410,8 @@ async def send_request(
 
   # (prompt len, output len, latency, success)
   request_latency_ms = (prompt_len, output_len, (request_end_time_ms - request_start_time_ms))
-  normalized_time_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
+  if output_len > 0
+    normalized_time_per_output_token_metric.observe((request_end_time_ms - request_start_time_ms) / output_len)
   prompt_length_metric.observe(prompt_len)
   response_length_metric.observe(output_len)
 
