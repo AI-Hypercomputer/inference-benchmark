@@ -54,7 +54,7 @@ python3 benchmark_serving.py --save-json-results --host=$IP  --port=$PORT --data
 gcloud artifacts repositories create ai-benchmark --location=us-central1 --repository-format=docker
 ```
 
-2. For Inifinity-Instruct and billsum datasets run
+2. [Optional] For Inifinity-Instruct and billsum datasets run
 
 ```
 pip install datasets transformers numpy pandas tqdm matplotlib
