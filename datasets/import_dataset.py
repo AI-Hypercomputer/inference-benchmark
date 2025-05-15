@@ -180,15 +180,63 @@ def plot_token_distributions(histogram_data, output_file="token_distributions.pn
     plt.savefig(output_file)
     print(f"Token distribution plot saved to {output_file}")
 
+def parse_dataset_config(dataset_config_str):
+    """
+    Parse the dataset configuration string into a proper tuple
+    Format: "dataset_name,config,input_text_prefix,input_column,output_column"
+    Where input_text_prefix can be:
+    - "None" to represent None
+    - Special escape sequences like "\n" for newline, "\t" for tab
+    """
+    parts = dataset_config_str.split(',')
+    if len(parts) != 5:
+        raise ValueError("Dataset config must have 5 parts: dataset_name,config,input_text_prefix,input_column,output_column")
+    
+    dataset_name = parts[0].strip()
+    config = parts[1].strip()
+    input_text_prefix = parts[2].strip()
+    input_column = parts[3].strip()
+    output_column = parts[4].strip()
+    
+    # Convert "None" string to None
+    if input_text_prefix.lower() == "none":
+        input_text_prefix = None
+    else:
+        # Process escape sequences
+        input_text_prefix = input_text_prefix.replace("\\n", "\n")
+        input_text_prefix = input_text_prefix.replace("\\t", "\t")
+        input_text_prefix = input_text_prefix.replace("\\r", "\r")
+        
+    return (dataset_name, config, input_text_prefix, input_column, output_column)
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze token statistics from a Hugging Face dataset")
     parser.add_argument("--tokenizer", type=str, default="meta-llama/Llama-3.1-8B-Instruct", help="Tokenizer to use for counting tokens")
     parser.add_argument("--max_samples", type=int, default=90000, help="Maximum number of samples to process")
     parser.add_argument("--hf_token", type=str, help="Hugging Face API token for authentication")
     parser.add_argument("--count_tokens", default=False, action="store_true", help="Count tokens in the dataset")
+    parser.add_argument("--dataset_configs", type=str, nargs='+', 
+                        help="Dataset configurations in format: 'dataset_name,config,input_text_prefix,input_column,output_column'. "
+                             "Use 'None' for input_text_prefix if none is needed. "
+                             "Special escape sequences like '\\n' for newline and '\\t' for tab are supported.",
+                        default=["FiscalNote/billsum,default,Summarize the following text:\\n,text,summary", 
+                                 "BAAI/Infinity-Instruct,Gen,None,instruction,generation"])
     
-    datasets_config = [("FiscalNote/billsum", "default", "Summarize text: ", "text", "summary"), ("BAAI/Infinity-Instruct", "Gen", None, "instruction", "generation")]
     args = parser.parse_args()
+    
+    # Parse dataset configurations
+    datasets_configs = []
+    for config_str in args.dataset_configs:
+        try:
+            datasets_configs.append(parse_dataset_config(config_str))
+        except ValueError as e:
+            print(f"Error parsing dataset config '{config_str}': {e}")
+            print("Skipping this dataset configuration.")
+            continue
+    
+    if not datasets_configs:
+        print("No valid dataset configurations provided. Exiting.")
+        return
     
     # Login to Hugging Face if token is provided
     if args.hf_token:
@@ -203,10 +251,10 @@ def main():
     else:
         print("No Hugging Face token provided. Some datasets may not be accessible.")
     
-    for dataset_name, config, input_text_prefix, input_column, output_column in datasets_config:
+    for dataset_name, config, input_text_prefix, input_column, output_column in datasets_configs:
         print(f"Loading dataset: {dataset_name}")
         try:
-            dataset = load_dataset(dataset_name, config, )
+            dataset = load_dataset(dataset_name, config)
         except Exception as e:
             print(f"Error loading dataset: {e}")
             print("Make sure you have installed the 'huggingface_hub' package and have proper authentication.")
