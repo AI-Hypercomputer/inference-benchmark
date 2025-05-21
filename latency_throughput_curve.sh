@@ -50,6 +50,7 @@ BASE_PYTHON_OPTS=(
 [[ "$OUTPUT_BUCKET_FILEPATH" ]] && BASE_PYTHON_OPTS+=("--output-bucket-filepath" "$OUTPUT_BUCKET_FILEPATH")
 
 SLEEP_TIME=${SLEEP_TIME:-0}
+POST_BENCHMARK_SLEEP_TIME=${POST_BENCHMARK_SLEEP_TIME:-infinity}
 
 for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
   echo "Benchmarking request rate: ${request_rate}"
@@ -74,4 +75,4 @@ for request_rate in $(echo $REQUEST_RATES | tr ',' ' '); do
 done
 
 export LPG_FINISHED="true"
-sleep infinity
+sleep $POST_BENCHMARK_SLEEP_TIME
