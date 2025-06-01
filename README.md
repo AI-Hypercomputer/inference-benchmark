@@ -1,7 +1,7 @@
 # Inference Benchmark
 
 A model server agnostic inference benchmarking tool that can be used to
-benchmark LLMs running on differet infrastructure like GPU and TPU. It can also
+benchmark LLMs running on different infrastructure like GPUs and TPUs. It can also
 be run on a GKE cluster as a container.
 
 ## Run the benchmark
