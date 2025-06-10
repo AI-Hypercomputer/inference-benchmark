@@ -681,38 +681,50 @@ def print_metrics(metrics: List[str], duration_sec: float, namespace: str, job: 
     metric_results = {}
     # Queries scrape all metrics collected from the last $DURATION seconds from the backend's related
     # podmonitoring spec assumed to be named "$BACKEND-podmonitoring"
+
+    filters = ""
+    if job != "":
+        filters += f'job="{job}"'
+    if namespace != "":
+        if filters != "":
+            filters += ","
+        filters += f'namespace="{namespace}"'
+    if filters != "":
+        filters = f"{{{filters}}}"
+
     queries = {
-      "gauge": {
-        "Mean": "avg_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-        "Median": "quantile_over_time(0.5, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-        "Sd": "stddev_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-        "Min": "min_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-        "Max": "max_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-        "P90": "quantile_over_time(0.9, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-        "P95": "quantile_over_time(0.95, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-        "P99": "quantile_over_time(0.99, %s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-      },
-      "histogram": {
-        "Mean": "sum(rate(%s_sum{job='%s',namespace='%s'}[%.0fs])) / sum(rate(%s_count{job='%s',namespace='%s'}[%.0fs]))" % (metric, job, namespace, duration_sec, metric, job, namespace, duration_sec),
-        "Median": "histogram_quantile(0.5, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
-        "Min": "histogram_quantile(0, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
-        "Max": "histogram_quantile(1, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
-        "P90": "histogram_quantile(0.9, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
-        "P95": "histogram_quantile(0.95, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
-        "P99": "histogram_quantile(0.99, sum(rate(%s_bucket{job='%s',namespace='%s'}[%.0fs])) by (le))" % (metric, job, namespace, duration_sec),
-      },
-      "counter": {
-        "Sum": "sum_over_time(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-        "Rate": "rate(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-        "Increase": "increase(%s{job='%s',namespace='%s'}[%.0fs])" % (metric, job, namespace, duration_sec),
-        "Mean": "avg_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
-        "Max": "max_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
-        "Min": "min_over_time(rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
-        "P90": "quantile_over_time(0.9, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
-        "P95": "quantile_over_time(0.5, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
-        "P99": "quantile_over_time(0.99, rate(%s{job='%s',namespace='%s'}[%.0fs])[%.0fs:%.0fs])" % (metric, job, namespace, duration_sec, duration_sec, duration_sec),
-      },
-  }
+        "gauge": {
+            "Mean": f"avg_over_time({metric}{filters}[{duration_sec:.0f}s])",
+            "Median": f"quantile_over_time(0.5, {metric}{filters}[{duration_sec:.0f}s])",
+            "Sd": f"stddev_over_time({metric}{filters}[{duration_sec:.0f}s])",
+            "Min": f"min_over_time({metric}{filters}[{duration_sec:.0f}s])",
+            "Max": f"max_over_time({metric}{filters}[{duration_sec:.0f}s])",
+            "P90": f"quantile_over_time(0.9, {metric}{filters}[{duration_sec:.0f}s])",
+            "P95": f"quantile_over_time(0.95, {metric}{filters}[{duration_sec:.0f}s])",
+            "P99": f"quantile_over_time(0.99, {metric}{filters}[{duration_sec:.0f}s])",
+        },
+        "histogram": {
+            "Mean": f"sum(rate({metric}_sum{filters}[{duration_sec:.0f}s])) / sum(rate({metric}_count{filters}[{duration_sec:.0f}s]))",
+            "Median": f"histogram_quantile(0.5, sum(rate({metric}_bucket{filters}[{duration_sec:.0f}s])) by (le))",
+            "Min": f"histogram_quantile(0, sum(rate({metric}_bucket{filters}[{duration_sec:.0f}s])) by (le))",
+            "Max": f"histogram_quantile(1, sum(rate({metric}_bucket{filters}[{duration_sec:.0f}s])) by (le))",
+            "P90": f"histogram_quantile(0.9, sum(rate({metric}_bucket{filters}[{duration_sec:.0f}s])) by (le))",
+            "P95": f"histogram_quantile(0.95, sum(rate({metric}_bucket{filters}[{duration_sec:.0f}s])) by (le))",
+            "P99": f"histogram_quantile(0.99, sum(rate({metric}_bucket{filters}[{duration_sec:.0f}s])) by (le))",
+        },
+        "counter": {
+            "Sum": f"sum_over_time({metric}{filters}[{duration_sec:.0f}s])",
+            "Rate": f"rate({metric}{filters}[{duration_sec:.0f}s])",
+            "Increase": f"increase({metric}{filters}[{duration_sec:.0f}s])",
+            "Mean": f"avg_over_time(rate({metric}{filters}[{duration_sec:.0f}s])[{duration_sec:.0f}s:{duration_sec:.0f}s])",
+            "Max": f"max_over_time(rate({metric}{filters}[{duration_sec:.0f}s])[{duration_sec:.0f}s:{duration_sec:.0f}s])",
+            "Min": f"min_over_time(rate({metric}{filters}[{duration_sec:.0f}s])[{duration_sec:.0f}s:{duration_sec:.0f}s])",
+            "P90": f"quantile_over_time(0.9, rate({metric}{filters}[{duration_sec:.0f}s])[{duration_sec:.0f}s:{duration_sec:.0f}s])",
+            "P95": f"quantile_over_time(0.95, rate({metric}{filters}[{duration_sec:.0f}s])[{duration_sec:.0f}s:{duration_sec:.0f}s])",
+            "P99": f"quantile_over_time(0.99, rate({metric}{filters}[{duration_sec:.0f}s])[{duration_sec:.0f}s:{duration_sec:.0f}s])",
+        },
+    }
+
     for query_name, query in queries[metric_type].items():
       # Configure respective query
       url='https://monitoring.googleapis.com/v1/projects/%s/location/global/prometheus/api/v1/query' % (project_id)
