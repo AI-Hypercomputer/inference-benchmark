@@ -165,6 +165,7 @@ async def send_stream_request(
     sax_model: str,
     model: str,
     timeout: float,
+    max_conn: int,
 ) -> Tuple[Tuple[int, int, float], float, List[float], Dict[str, int]]:
   """Sends stream request to server"""
   request_start_time_ms = 1000 * time.time()
@@ -199,7 +200,7 @@ async def send_stream_request(
   most_recent_timestamp = start_time_ms
   output = ""
   timeout = aiohttp.ClientTimeout(total=timeout)
-  async with aiohttp.ClientSession(timeout=timeout,trust_env=True) as session:
+  async with aiohttp.ClientSession(timeout=timeout,trust_env=True,connector=aiohttp.TCPConnector(limit=max_conn)) as session:
     try:
       async with session.post(api_url, headers=headers, json=pload, ssl=False) as response:
         async for chunk_bytes in response.content.iter_chunks():
@@ -273,6 +274,7 @@ async def send_request(
     sax_model: str,
     model: str,
     timeout: float,
+    max_conn: int,
 ) -> Tuple[Tuple[int, int, float], float, List[float], Dict[str, int]]:
   """Sends request to server."""
   request_start_time_ms = 1000 * time.time()
@@ -347,7 +349,7 @@ async def send_request(
 
   # Set client timeout to be 3 hrs.
   timeout = aiohttp.ClientTimeout(total=timeout)
-  async with aiohttp.ClientSession(timeout=timeout,trust_env=True,trace_configs=[trace_config]) as session:
+  async with aiohttp.ClientSession(timeout=timeout,trust_env=True,trace_configs=[trace_config],connector=aiohttp.TCPConnector(limit=max_conn)) as session:
     while True:
       try:
         async with session.post(api_url, headers=headers, json=pload, ssl=False) as response:
@@ -421,11 +423,13 @@ async def run_single_request(args: argparse.Namespace, api_url: str, tokenizer: 
     if args.stream_request:
         result = await send_stream_request(
             args.backend, api_url, prompt, prompt_len, output_len, args.ignore_eos,
-            args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model, args.request_timeout,)
+            args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model,
+            chosen_model, args.request_timeout, args.tcp_conn_limit)
     else:
         result = await send_request(
             args.backend, api_url, prompt, prompt_len, output_len, args.ignore_eos,
-            args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model, chosen_model, args.request_timeout,)
+            args.best_of, args.use_beam_search, args.top_k, tokenizer, args.sax_model,
+            chosen_model, args.request_timeout, args.tcp_conn_limit)
     return chosen_model, result
 
 async def benchmark(
@@ -1080,6 +1084,7 @@ if __name__ == "__main__":
   )
   parser.add_argument("--pm-namespace", type=str, default="default", help="namespace of the pod monitoring object, ignored if scrape-server-metrics is false")
   parser.add_argument("--pm-job", type=str, default="vllm-podmonitoring", help="name of the pod monitoring object, ignored if scrape-server-metrics is false")
+  parser.add_argument("--tcp-conn-limit", type=int, default=100, help="Max number of tcp connections allowed per aiohttp ClientSession")
   cmd_args = parser.parse_args()
   
   level = logging.INFO
