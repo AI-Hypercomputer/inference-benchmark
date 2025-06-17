@@ -48,7 +48,7 @@ BASE_PYTHON_OPTS=(
 [[ "$STREAM_REQUEST" = "true" ]] && BASE_PYTHON_OPTS+=("--stream-request")
 [[ "$IGNORE_EOS" = "true" ]] && BASE_PYTHON_OPTS+=("--ignore-eos")
 [[ "$OUTPUT_BUCKET_FILEPATH" ]] && BASE_PYTHON_OPTS+=("--output-bucket-filepath" "$OUTPUT_BUCKET_FILEPATH")
-[[ "$MAX_TCP_LIMIT" ]] && BASE_PYTHON_OPTS+=("--max-tcp-limit" "$MAX_TCP_LIMIT")
+[[ "$TCP_CONN_LIMIT" ]] && BASE_PYTHON_OPTS+=("--tcp-conn-limit" "$TCP_CONN_LIMIT")
 
 SLEEP_TIME=${SLEEP_TIME:-0}
 POST_BENCHMARK_SLEEP_TIME=${POST_BENCHMARK_SLEEP_TIME:-infinity}
