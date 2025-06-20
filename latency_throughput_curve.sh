@@ -41,6 +41,9 @@ BASE_PYTHON_OPTS=(
   "--pm-job=$PM_JOB"
 )
 
+[[ "$MIN_INPUT_LENGTH" ]] && BASE_PYTHON_OPTS+=("--min-input-length=$MIN_INPUT_LENGTH")
+[[ "$MIN_OUTPUT_LENGTH" ]] && BASE_PYTHON_OPTS+=("--min-output-length=$MIN_OUTPUT_LENGTH")
+[[ "$OUTPUT_BUCKET" ]] && BASE_PYTHON_OPTS+=("--output-bucket=$OUTPUT_BUCKET")
 [[ "$TRAFFIC_SPLIT" ]] && BASE_PYTHON_OPTS+=("--traffic-split=$TRAFFIC_SPLIT")
 [[ "$OUTPUT_BUCKET" ]] && BASE_PYTHON_OPTS+=("--output-bucket=$OUTPUT_BUCKET")
 [[ "$SCRAPE_SERVER_METRICS" = "true" ]] && BASE_PYTHON_OPTS+=("--scrape-server-metrics")
@@ -49,6 +52,10 @@ BASE_PYTHON_OPTS=(
 [[ "$IGNORE_EOS" = "true" ]] && BASE_PYTHON_OPTS+=("--ignore-eos")
 [[ "$OUTPUT_BUCKET_FILEPATH" ]] && BASE_PYTHON_OPTS+=("--output-bucket-filepath" "$OUTPUT_BUCKET_FILEPATH")
 [[ "$TCP_CONN_LIMIT" ]] && BASE_PYTHON_OPTS+=("--tcp-conn-limit" "$TCP_CONN_LIMIT")
+[[ "$SPANNER_INSTANCE_ID" ]] && BASE_PYTHON_OPTS+=("--spanner-instance-id" "$SPANNER_INSTANCE_ID")
+[[ "$SPANNER_DATABASE_ID" ]] && BASE_PYTHON_OPTS+=("--spanner-database-id" "$SPANNER_DATABASE_ID")
+
+
 
 SLEEP_TIME=${SLEEP_TIME:-0}
 POST_BENCHMARK_SLEEP_TIME=${POST_BENCHMARK_SLEEP_TIME:-infinity}
