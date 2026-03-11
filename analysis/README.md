@@ -12,3 +12,9 @@ To analyze the price-perf results, you can include instance pricing to get a cha
 ```
 python analyze.py results/ --instance-price-per-hour 10
 ```
+
+To analyze results across different runs and compare their latency and throughput metrics, you can do the following:
+
+```
+python analyze.py run-1/ run-2/ run-3/
+```
