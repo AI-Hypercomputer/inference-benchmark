@@ -34,6 +34,10 @@ aioprometheus[starlette]
 pynvml == 11.5.0
 accelerate
 aiohttp
+
+# For Google Cloud Storage
 google-auth
 google-cloud-storage >= 2.18.2
 prometheus_client >= 0.21.0
+google-cloud-spanner
+google-api-core
